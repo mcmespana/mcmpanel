@@ -82,6 +82,11 @@ export function AppSidebar({ activeSection, onSectionChange, jsonData }: AppSide
       return feedbackCount > 0 ? 'active' : 'empty';
     }
     
+    if (sectionId === 'songs' && sectionData.data) {
+      const categoriesCount = Object.keys(sectionData.data).length;
+      return categoriesCount > 0 ? 'active' : 'empty';
+    }
+    
     if (sectionData.data) {
       return Array.isArray(sectionData.data) ? 
         sectionData.data.length > 0 ? 'active' : 'empty' :

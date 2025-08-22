@@ -7,6 +7,7 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AlbumsSection } from './sections/AlbumsSection';
 import { AppSection } from './sections/AppSection';
 import { CalendarsSection } from './sections/CalendarsSection';
+import { SongsSection } from './sections/SongsSection';
 import { WordleSection } from './sections/WordleSection';
 import { JubileoSection } from './sections/JubileoSection';
 import { useToast } from '@/hooks/use-toast';
@@ -135,6 +136,8 @@ export function JSONManager() {
         return <AppSection data={jsonData.app} onUpdate={(data) => updateSectionData('app', data)} />;
       case 'calendars':
         return <CalendarsSection data={jsonData.calendars} onUpdate={(data) => updateSectionData('calendars', data)} />;
+      case 'songs':
+        return <SongsSection data={jsonData.songs} onUpdate={(data) => updateSectionData('songs', data)} />;
       case 'wordle':
         return <WordleSection data={jsonData.wordle} onUpdate={(data) => updateSectionData('wordle', data)} />;
       case 'jubileo':
