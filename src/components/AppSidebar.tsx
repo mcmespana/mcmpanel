@@ -17,7 +17,8 @@ import {
   Gamepad2, 
   Trophy,
   ChevronRight,
-  Zap
+  Zap,
+  Bell
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ActiveSection, JSONData } from "./JSONManager";
@@ -64,6 +65,12 @@ const menuItems = [
     title: 'Jubileo',
     icon: Trophy,
     description: 'Eventos especiales'
+  },
+  {
+    id: 'notifications' as ActiveSection,
+    title: 'Notificaciones',
+    icon: Bell,
+    description: 'Push notifications'
   },
 ];
 
