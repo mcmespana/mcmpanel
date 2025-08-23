@@ -10,6 +10,7 @@ import { CalendarsSection } from './sections/CalendarsSection';
 import { SongsSection } from './sections/SongsSection';
 import { WordleSection } from './sections/WordleSection';
 import { JubileoSection } from './sections/JubileoSection';
+import { ActivitiesSection } from './sections/ActivitiesSection';
 import { NotificationsSection } from './sections/NotificationsSection';
 import { useToast } from '@/hooks/use-toast';
 
@@ -20,6 +21,7 @@ export type JSONData = {
   songs?: any;
   wordle?: any;
   jubileo?: any;
+  activities?: any;
 };
 
 export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'activities' | 'notifications';
