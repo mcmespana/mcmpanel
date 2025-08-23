@@ -10,7 +10,6 @@ import { CalendarsSection } from './sections/CalendarsSection';
 import { SongsSection } from './sections/SongsSection';
 import { WordleSection } from './sections/WordleSection';
 import { JubileoSection } from './sections/JubileoSection';
-import { NotificationsSection } from './sections/NotificationsSection';
 import { useToast } from '@/hooks/use-toast';
 
 export type JSONData = {
@@ -22,7 +21,7 @@ export type JSONData = {
   jubileo?: any;
 };
 
-export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'jubileo' | 'notifications';
+export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'jubileo';
 
 export function JSONManager() {
   const [jsonData, setJsonData] = useState<JSONData | null>(null);
@@ -143,8 +142,6 @@ export function JSONManager() {
         return <WordleSection data={jsonData.wordle} onUpdate={(data) => updateSectionData('wordle', data)} />;
       case 'jubileo':
         return <JubileoSection data={jsonData.jubileo} onUpdate={(data) => updateSectionData('jubileo', data)} />;
-      case 'notifications':
-        return <NotificationsSection />;
       default:
         return <div className="p-8 text-center text-muted-foreground">Sección en desarrollo</div>;
     }
