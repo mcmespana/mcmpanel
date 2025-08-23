@@ -36,6 +36,7 @@ export function JSONManager() {
   const saveTimer = useRef<number | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>('albums');
   const { toast } = useToast();
+  const pendingUpdates = useRef<Record<string, any>>({});
 
   // Suscripción en tiempo real a la raíz de la DB
   useEffect(() => {
@@ -117,19 +118,41 @@ export function JSONManager() {
     
     setJsonData(updatedData);
     setDirty(true);
+    pendingUpdates.current[section] = updatedData[section];
     toast({
       title: "Datos actualizados",
       description: `La sección ${section} se ha actualizado correctamente`,
     });
   };
 
+  const writePending = async () => {
+    const db = getDB();
+    const entries = Object.entries(pendingUpdates.current);
+    for (const [key, value] of entries) {
+      if (key === 'wordle') {
+        // Solo actualiza daily-words y updatedAt
+        if (value && typeof value === 'object') {
+          if (value['daily-words'] !== undefined) {
+            await set(ref(db, '/wordle/daily-words'), value['daily-words']);
+          }
+          if (value['updatedAt'] !== undefined) {
+            await set(ref(db, '/wordle/updatedAt'), value['updatedAt']);
+          }
+        }
+        continue;
+      }
+      await set(ref(db, `/${key}`), (jsonData as any)[key]);
+    }
+  };
+
   const forceSave = async () => {
     if (!jsonData) return;
     try {
       setSaveStatus('saving');
-      await set(ref(getDB(), '/'), jsonData);
+      await writePending();
       setSaveStatus('saved');
       setDirty(false);
+      pendingUpdates.current = {};
       toast({ title: 'Guardado en Firebase', description: 'Los cambios se han sincronizado.' });
     } catch (e) {
       console.error(e);
@@ -142,12 +165,13 @@ export function JSONManager() {
   useEffect(() => {
     if (saveTimer.current) window.clearInterval(saveTimer.current);
     saveTimer.current = window.setInterval(() => {
-      if (dirty && jsonData) {
+      if (dirty && jsonData && Object.keys(pendingUpdates.current).length > 0) {
         setSaveStatus('saving');
-        set(ref(getDB(), '/'), jsonData)
+        writePending()
           .then(() => {
             setSaveStatus('saved');
             setDirty(false);
+            pendingUpdates.current = {};
           })
           .catch((e) => {
             console.error(e);
@@ -231,7 +255,12 @@ export function JSONManager() {
       case 'wordle':
         return <WordleSection data={jsonData.wordle} onUpdate={(data) => updateSectionData('wordle', data)} />;
       case 'activities':
-        return <ActivitiesSection data={jsonData} onUpdate={(data) => { setJsonData(data); setDirty(true); }} />;
+        return (
+          <ActivitiesSection 
+            data={jsonData.activities || {}} 
+            onUpdate={(data) => updateSectionData('activities', data)} 
+          />
+        );
       case 'notifications':
         return <NotificationsSection />;
       default:
@@ -270,34 +299,40 @@ export function JSONManager() {
                   Probar conexión
                 </Button>
               )}
-              <Button onClick={forceSave} variant="default" size="sm" className="tech-glow">
-                <Save className="w-4 h-4 mr-2" />
-                Guardar ahora
-              </Button>
               <Button onClick={handleDownload} variant="outline" size="sm" className="tech-glow">
                 <Download className="w-4 h-4 mr-2" />
                 Descargar JSON
               </Button>
-              <div className="flex items-center text-xs text-muted-foreground ml-2">
-                {saveStatus === 'saving' && (
-                  <span className="flex items-center"><Save className="w-3 h-3 mr-1 animate-pulse" /> Guardando…</span>
-                )}
-                {saveStatus === 'saved' && (
-                  <span className="flex items-center text-green-500"><CheckCircle2 className="w-3 h-3 mr-1" /> Guardado</span>
-                )}
-                {saveStatus === 'error' && (
-                  <span className="flex items-center text-red-500"><AlertCircle className="w-3 h-3 mr-1" /> Error al guardar</span>
-                )}
-                {saveStatus === 'idle' && !dirty && (
-                  <span className="flex items-center"><CheckCircle2 className="w-3 h-3 mr-1" /> Sin cambios</span>
-                )}
-                {dirty && saveStatus !== 'saving' && (
-                  <span className="ml-2">Cambios sin guardar</span>
-                )}
-              </div>
+              <Button 
+                onClick={forceSave} 
+                size="sm" 
+                className={`tech-glow ${dirty ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}`}
+                variant={dirty ? 'default' : 'secondary'}
+                disabled={!dirty && saveStatus !== 'error'}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Guardar ahora
+              </Button>
             </div>
           </header>
-          
+          {/* Indicador de guardado en la franja inferior del header */}
+          {!dirty && (
+            <div className="px-6 py-1 text-xs border-b border-border/50 bg-card/20">
+              {saveStatus === 'saving' && (
+                <span className="flex items-center text-muted-foreground"><Save className="w-3 h-3 mr-1 animate-pulse" /> Guardando…</span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="flex items-center text-green-500"><CheckCircle2 className="w-3 h-3 mr-1" /> Guardado</span>
+              )}
+              {saveStatus === 'error' && (
+                <span className="flex items-center text-red-500"><AlertCircle className="w-3 h-3 mr-1" /> Error al guardar</span>
+              )}
+              {saveStatus === 'idle' && (
+                <span className="flex items-center text-muted-foreground"><CheckCircle2 className="w-3 h-3 mr-1" /> Sin cambios</span>
+              )}
+            </div>
+          )}
+
           <main className="flex-1 overflow-auto">
             {renderActiveSection()}
           </main>

@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { 
   Download, 
   Music, 
@@ -51,12 +53,121 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [editingSongIndex, setEditingSongIndex] = useState<number>(-1);
   const [draggedIndex, setDraggedIndex] = useState<number>(-1);
+  const [showDoneFallitos, setShowDoneFallitos] = useState(false);
   const { toast } = useToast();
 
   const categories = data?.data || {};
   const sortedCategories = Object.entries(categories).sort(([, a], [, b]) => 
     a.categoryTitle.localeCompare(b.categoryTitle)
   );
+
+  // Fallitos: estructura flexible. Se espera en data.fallitos por categorías (catXXXXX) -> id -> item
+  const fallitosRaw = (data as any)?.fallitos || {};
+
+  const formatCategoryKey = (catKey: string) => {
+    const key = catKey.startsWith('cat') ? catKey.slice(3) : catKey;
+    if (!key) return 'General';
+    const first = key[0];
+    const rest = key.slice(1);
+    return `${first.toUpperCase()}. ${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
+  };
+
+  type Fallito = { status?: string; [k: string]: any };
+  type FallitoEntry = { id: string; categoryKey: string; songKey?: string; title: string; status: string; raw: Fallito };
+
+  const flattenFallitos = (): FallitoEntry[] => {
+    const out: FallitoEntry[] = [];
+    Object.entries(fallitosRaw || {}).forEach(([catKey, level1]) => {
+      if (!level1) return;
+      // Case A: category -> array of items
+      if (Array.isArray(level1)) {
+        level1.forEach((it: any, idx) => {
+          const status = String(it?.status || '').toLowerCase();
+          const title = it?.songTitle || it?.title || it?.['Song Title'] || `Item ${idx + 1}`;
+          out.push({ id: String(idx), categoryKey: catKey, title, status, raw: it });
+        });
+        return;
+      }
+      // Case B: category -> direct map id -> item
+      if (typeof level1 === 'object' && Object.values(level1).every(v => v && (v as any).status !== undefined || (v as any).songTitle !== undefined)) {
+        Object.entries(level1 as Record<string, any>).forEach(([id, it]) => {
+          const status = String(it?.status || '').toLowerCase();
+          const title = it?.songTitle || it?.title || it?.['Song Title'] || id;
+          out.push({ id, categoryKey: catKey, title, status, raw: it });
+        });
+        return;
+      }
+      // Case C: category -> songName -> id -> item (estructura del ejemplo)
+      Object.entries(level1 as Record<string, any>).forEach(([songKey, idMap]) => {
+        if (!idMap) return;
+        if (Array.isArray(idMap)) {
+          (idMap as any[]).forEach((it, idx) => {
+            const status = String(it?.status || '').toLowerCase();
+            const title = it?.songTitle || it?.title || it?.['Song Title'] || songKey;
+            out.push({ id: String(idx), categoryKey: catKey, songKey, title, status, raw: it });
+          });
+        } else if (typeof idMap === 'object') {
+          Object.entries(idMap as Record<string, any>).forEach(([id, it]) => {
+            const status = String(it?.status || '').toLowerCase();
+            const title = it?.songTitle || it?.title || it?.['Song Title'] || songKey;
+            out.push({ id, categoryKey: catKey, songKey, title, status, raw: it });
+          });
+        }
+      });
+    });
+    return out;
+  };
+
+  const fallitos = flattenFallitos().filter(f => showDoneFallitos ? true : f.status !== 'done');
+  const [openFallito, setOpenFallito] = useState<FallitoEntry | null>(null);
+
+  const updateFallito = (entry: FallitoEntry, patch: Partial<Fallito>) => {
+    const updated: any = { ...(data as any) };
+    const cat = updated.fallitos?.[entry.categoryKey];
+    if (!cat) return;
+    if (entry.songKey && cat[entry.songKey]) {
+      if (Array.isArray(cat[entry.songKey])) {
+        const idx = Number(entry.id);
+        cat[entry.songKey][idx] = { ...cat[entry.songKey][idx], ...patch };
+      } else {
+        cat[entry.songKey][entry.id] = { ...cat[entry.songKey][entry.id], ...patch };
+      }
+    } else if (Array.isArray(cat)) {
+      const idx = Number(entry.id);
+      cat[idx] = { ...cat[idx], ...patch };
+    } else if (typeof cat === 'object') {
+      cat[entry.id] = { ...cat[entry.id], ...patch };
+    }
+    updated.fallitos[entry.categoryKey] = cat;
+    onUpdate(updated);
+  };
+
+  const fallitoStatusOptions = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'in progress', label: 'In progress' },
+    { value: 'done', label: 'Done' },
+  ];
+
+  const deleteFallito = (entry: FallitoEntry) => {
+    const updated: any = { ...(data as any) };
+    if (!updated.fallitos || !updated.fallitos[entry.categoryKey]) return;
+    const cat = updated.fallitos[entry.categoryKey];
+    if (entry.songKey && cat[entry.songKey]) {
+      if (Array.isArray(cat[entry.songKey])) {
+        cat[entry.songKey].splice(Number(entry.id), 1);
+      } else if (typeof cat[entry.songKey] === 'object') {
+        delete cat[entry.songKey][entry.id];
+        if (Object.keys(cat[entry.songKey]).length === 0) delete cat[entry.songKey];
+      }
+    } else if (Array.isArray(cat)) {
+      cat.splice(Number(entry.id), 1);
+    } else if (typeof cat === 'object') {
+      delete cat[entry.id];
+    }
+    updated.fallitos[entry.categoryKey] = cat;
+    onUpdate(updated);
+    toast({ title: 'Fallito eliminado', description: `${entry.title}` });
+  };
 
   const handleDownloadSongs = () => {
     const songsData = JSON.stringify(data, null, 2);
@@ -412,6 +523,87 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
           </div>
         </div>
 
+        {/* Fallitos destacados */}
+        <Card className="bg-card/50 backdrop-blur-sm border-border/50 shadow-tech">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-foreground">Fallitos del Cantoral</CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{fallitos.length}</Badge>
+                <Button variant="ghost" size="sm" onClick={() => setShowDoneFallitos(v => !v)}>
+                  {showDoneFallitos ? 'Ocultar done' : 'Mostrar done'}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {fallitos.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No hay fallitos pendientes.</p>
+            ) : (
+              fallitos.map((f) => (
+                <div key={`${f.categoryKey}-${f.id}`} className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-background/30">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{f.title}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="outline">{formatCategoryKey(f.categoryKey)}</Badge>
+                      <Select value={f.status} onValueChange={(v) => updateFallito(f, { status: v })}>
+                        <SelectTrigger className="w-40 h-7">
+                          <SelectValue placeholder="Estado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {fallitoStatusOptions.map(o => (
+                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button variant="ghost" size="sm" onClick={() => setOpenFallito(f)}>Ver</Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-4 shrink-0">
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteFallito(f)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        {openFallito && (
+          <Dialog open={!!openFallito} onOpenChange={() => setOpenFallito(null)}>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Detalle del fallito</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><span className="text-muted-foreground">Canción:</span> {openFallito.raw.songTitle || '-'}</div>
+                  <div><span className="text-muted-foreground">Archivo:</span> {openFallito.raw.songFilename || '-'}</div>
+                  <div><span className="text-muted-foreground">Plataforma:</span> {openFallito.raw.platform || '-'}</div>
+                  <div><span className="text-muted-foreground">Fecha:</span> {openFallito.raw.reportedAt ? new Date(openFallito.raw.reportedAt).toLocaleString() : '-'}</div>
+                  <div><span className="text-muted-foreground">Usuario:</span> {openFallito.raw.userName || '-'}</div>
+                  <div><span className="text-muted-foreground">Ubicación:</span> {openFallito.raw.userLocation || '-'}</div>
+                  <div className="col-span-2"><span className="text-muted-foreground">Descripción:</span> {openFallito.raw.description || '-'}</div>
+                </div>
+                <div className="pt-2">
+                  <Label>Estado</Label>
+                  <Select value={openFallito.status} onValueChange={(v) => { updateFallito(openFallito, { status: v }); setOpenFallito({ ...openFallito, status: v }); }}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fallitoStatusOptions.map(o => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {sortedCategories.map(([categoryKey, category]) => (
             <Card 
@@ -459,5 +651,115 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
         )}
       </div>
     </div>
+  );
+}
+
+// Panel de Solicitudes del Cantoral
+function SolicitudesPanel({ data, onUpdate }: { data: any; onUpdate: (d: any) => void }) {
+  const solicitudesRaw = data?.solicitudes || {};
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [current, setCurrent] = useState<any>(null);
+  const statusOptions = [
+    { value: 'pendiente', label: 'Pendiente' },
+    { value: 'en progreso', label: 'En progreso' },
+    { value: 'hecho', label: 'Hecho' },
+    { value: 'cancelado', label: 'Cancelado' },
+  ];
+
+  const entries = Object.entries(solicitudesRaw) as [string, any][];
+
+  const updateStatus = (id: string, status: string) => {
+    const updated = { ...(data || {}) };
+    if (!updated.solicitudes) updated.solicitudes = {};
+    updated.solicitudes[id] = { ...updated.solicitudes[id], status };
+    onUpdate(updated);
+  };
+
+  const remove = (id: string) => {
+    const updated = { ...(data || {}) } as any;
+    if (updated.solicitudes && updated.solicitudes[id]) {
+      delete updated.solicitudes[id];
+      onUpdate(updated);
+    }
+  };
+
+  return (
+    <Card className="bg-card/50 backdrop-blur-sm border-border/50 shadow-tech">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-foreground">Solicitudes del Cantoral</CardTitle>
+          <Badge variant="secondary">{entries.length}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No hay solicitudes.</p>
+        ) : (
+          entries.map(([id, item]) => (
+            <div key={id} className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-background/30">
+              <div className="min-w-0">
+                <div className="font-medium truncate">{item.title || 'Sin título'}</div>
+                <div className="text-xs text-muted-foreground truncate">{item.author || 'Autor desconocido'}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline">{item.category || 'General'}</Badge>
+                  <Select value={item.status} onValueChange={(v) => updateStatus(id, v)}>
+                    <SelectTrigger className="h-7 w-40">
+                      <SelectValue placeholder="Estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusOptions.map(o => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="sm" onClick={() => { setOpenId(id); setCurrent(item); }}>Ver</Button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 ml-4 shrink-0">
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => remove(id)}>
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+
+      {openId && current && (
+        <Dialog open={!!openId} onOpenChange={() => { setOpenId(null); setCurrent(null); }}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Detalle de la solicitud</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div><span className="text-muted-foreground">Título:</span> {current.title || '-'}</div>
+                <div><span className="text-muted-foreground">Autor:</span> {current.author || '-'}</div>
+                <div><span className="text-muted-foreground">Plataforma:</span> {current.platform || '-'}</div>
+                <div><span className="text-muted-foreground">Fecha:</span> {current.requestedAt ? new Date(current.requestedAt).toLocaleString() : '-'}</div>
+                <div><span className="text-muted-foreground">Usuario:</span> {current.userName || '-'}</div>
+                <div><span className="text-muted-foreground">Ubicación:</span> {current.userLocation || '-'}</div>
+                <div className="col-span-2"><span className="text-muted-foreground">Contenido:</span>
+                  <pre className="mt-1 whitespace-pre-wrap text-xs bg-background/50 p-2 rounded">{current.content || '-'}</pre>
+                </div>
+              </div>
+              <div className="pt-2">
+                <Label>Estado</Label>
+                <Select value={current.status} onValueChange={(v) => { updateStatus(openId, v); setCurrent({ ...current, status: v }); }}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map(o => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </Card>
   );
 }

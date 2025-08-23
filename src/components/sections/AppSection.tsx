@@ -40,12 +40,16 @@ const categoryIcons = {
 export function AppSection({ data, onUpdate }: AppSectionProps) {
   const [feedback, setFeedback] = useState(data?.feedback || {});
   const { toast } = useToast();
+  const [justSaved, setJustSaved] = useState(false);
 
   const saveChanges = () => {
     onUpdate({
       feedback,
       updatedAt: new Date().toISOString()
     });
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 1500);
+    toast({ title: 'Cambios guardados', description: 'Feedback actualizado' });
   };
 
   const handleStatusChange = (category: string, id: string, newStatus: string) => {
@@ -189,9 +193,16 @@ export function AppSection({ data, onUpdate }: AppSectionProps) {
           </p>
         </div>
         
-        <Button onClick={saveChanges} className="tech-glow">
-          <MessageSquare className="w-4 h-4 mr-2" />
-          Guardar Cambios
+        <Button onClick={saveChanges} className={`tech-glow ${justSaved ? 'bg-success text-success-foreground hover:bg-success/90' : ''}`}>
+          {justSaved ? (
+            <>
+              <MessageSquare className="w-4 h-4 mr-2" /> Guardado
+            </>
+          ) : (
+            <>
+              <MessageSquare className="w-4 h-4 mr-2" /> Guardar Cambios
+            </>
+          )}
         </Button>
       </div>
 

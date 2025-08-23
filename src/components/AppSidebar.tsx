@@ -112,10 +112,10 @@ export function AppSidebar({ activeSection, onSectionChange, jsonData }: AppSide
   };
 
   return (
-    <Sidebar className={cn("border-r border-border/50 bg-card/30 backdrop-blur-sm", collapsed ? "w-16" : "w-64")}>
-      <SidebarContent className="p-4">
+    <Sidebar className={cn("border-r border-border/50 bg-card/40 backdrop-blur-md", collapsed ? "w-16" : "w-64")}>
+      <SidebarContent className="p-3">
         <SidebarGroup>
-          <SidebarGroupLabel className="mb-4 text-primary font-bold flex items-center">
+          <SidebarGroupLabel className="mb-2 text-primary font-bold flex items-center tracking-wide">
             <Zap className="w-4 h-4 mr-2" />
             {!collapsed && "Secciones"}
           </SidebarGroupLabel>
@@ -125,20 +125,21 @@ export function AppSidebar({ activeSection, onSectionChange, jsonData }: AppSide
               {menuItems.map((item) => {
                 const isActive = activeSection === item.id;
                 const status = getSectionStatus(item.id);
+                const showIndicator = item.id !== 'notifications';
                 
                 return (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
                       onClick={() => onSectionChange(item.id)}
                       className={cn(
-                        "relative group transition-all duration-200 rounded-lg border",
+                        "relative group transition-all duration-200 rounded-lg border px-3 py-2 min-h-12",
                         isActive 
                           ? "bg-primary/10 border-primary/30 text-primary shadow-glow" 
                           : getStatusColor(status),
                         "hover:bg-primary/5 hover:border-primary/20"
                       )}
                     >
-                      <div className="flex items-center w-full">
+                      <div className="flex items-center w-full gap-3">
                         <item.icon className={cn(
                           "w-5 h-5 transition-colors",
                           isActive ? "text-primary" : "text-foreground/70"
@@ -147,13 +148,13 @@ export function AppSidebar({ activeSection, onSectionChange, jsonData }: AppSide
                         {!collapsed && (
                           <div className="ml-3 flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <span className="font-medium truncate">{item.title}</span>
+                              <span className="font-medium truncate leading-tight">{item.title}</span>
                               <ChevronRight className={cn(
                                 "w-4 h-4 transition-all duration-200",
                                 isActive ? "rotate-90 text-primary" : "text-muted-foreground group-hover:translate-x-1"
                               )} />
                             </div>
-                            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                            <p className="text-xs text-muted-foreground mt-1 truncate">
                               {item.description}
                             </p>
                           </div>
@@ -162,6 +163,18 @@ export function AppSidebar({ activeSection, onSectionChange, jsonData }: AppSide
                       
                       {isActive && (
                         <div className="absolute inset-0 bg-gradient-primary opacity-5 rounded-lg" />
+                      )}
+                      {!collapsed && showIndicator && (
+                        <>
+                          <div className={cn(
+                            "absolute right-2 top-1 w-2 h-2 rounded-full",
+                            status === 'active' ? 'bg-success' : 'bg-muted-foreground/40'
+                          )} />
+                          <div className={cn(
+                            "absolute right-2 bottom-1 w-2 h-2 rounded-full",
+                            status === 'active' ? 'bg-success' : 'bg-muted-foreground/40'
+                          )} />
+                        </>
                       )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
