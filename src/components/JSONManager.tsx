@@ -12,9 +12,11 @@ import { WordleSection } from './sections/WordleSection';
 import { JubileoSection } from './sections/JubileoSection';
 import { ActivitiesSection } from './sections/ActivitiesSection';
 import { NotificationsSection } from './sections/NotificationsSection';
+import { StorageModeIndicator } from './StorageModeIndicator';
 import { useToast } from '@/hooks/use-toast';
-import { getDB } from '@/lib/firebase';
+import { getDB, isFirebaseConfigured } from '@/lib/firebase';
 import { onValue, ref, set } from 'firebase/database';
+import { saveToLocalStorage, loadFromLocalStorage, isLocalStorageAvailable } from '@/lib/localStorage';
 
 export type JSONData = {
   albums?: any;
@@ -28,43 +30,115 @@ export type JSONData = {
 
 export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'activities' | 'notifications';
 
+export type StorageMode = 'firebase' | 'localStorage' | 'offline';
+
 export function JSONManager() {
   const [jsonData, setJsonData] = useState<JSONData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [dirty, setDirty] = useState(false);
+  const [storageMode, setStorageMode] = useState<StorageMode>('offline');
   const saveTimer = useRef<number | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>('albums');
   const { toast } = useToast();
   const pendingUpdates = useRef<Record<string, any>>({});
 
-  // Suscripción en tiempo real a la raíz de la DB
+  // Inicialización del storage (Firebase o localStorage)
   useEffect(() => {
-    const db = getDB();
-    const rootRef = ref(db, '/');
-    const unsub = onValue(
-      rootRef,
-      (snap) => {
-        const val = snap.val();
-        if (val && typeof val === 'object') {
-          setJsonData(val);
-        } else {
-          setJsonData({} as JSONData);
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.error('Firebase onValue error', err);
+    const initializeStorage = async () => {
+      // Primero intentar cargar desde localStorage si existe
+      const localData = loadFromLocalStorage();
+      if (localData) {
+        setJsonData(localData);
+        setStorageMode('localStorage');
         setLoading(false);
         toast({
-          title: 'Error conectando con Firebase',
-          description: 'Revisa las credenciales y las reglas de la Realtime Database',
-          variant: 'destructive',
+          title: 'Datos cargados desde localStorage',
+          description: 'Los datos se han cargado desde el almacenamiento local',
+        });
+        return;
+      }
+
+      // Intentar conectar con Firebase si está configurado
+      if (isFirebaseConfigured()) {
+        try {
+          const db = getDB();
+          const rootRef = ref(db, '/');
+          const unsub = onValue(
+            rootRef,
+            (snap) => {
+              const val = snap.val();
+              if (val && typeof val === 'object') {
+                setJsonData(val);
+                setStorageMode('firebase');
+              } else {
+                setJsonData({} as JSONData);
+                setStorageMode('firebase');
+              }
+              setLoading(false);
+              toast({
+                title: 'Conectado a Firebase',
+                description: 'Los datos se han sincronizado correctamente',
+              });
+            },
+            (err) => {
+              console.error('Firebase onValue error', err);
+              // Fallback a localStorage si Firebase falla
+              const fallbackData = loadFromLocalStorage();
+              if (fallbackData) {
+                setJsonData(fallbackData);
+                setStorageMode('localStorage');
+                toast({
+                  title: 'Conectado en modo local',
+                  description: 'Firebase no disponible, usando almacenamiento local',
+                  variant: 'destructive',
+                });
+              } else {
+                setStorageMode('offline');
+                toast({
+                  title: 'Error conectando con Firebase',
+                  description: 'Revisa las credenciales y las reglas de la Realtime Database',
+                  variant: 'destructive',
+                });
+              }
+              setLoading(false);
+            }
+          );
+
+          return () => unsub();
+        } catch (error) {
+          console.error('Firebase initialization error', error);
+          // Fallback a localStorage
+          const fallbackData = loadFromLocalStorage();
+          if (fallbackData) {
+            setJsonData(fallbackData);
+            setStorageMode('localStorage');
+            toast({
+              title: 'Modo local activado',
+              description: 'Firebase no configurado, usando almacenamiento local',
+            });
+          } else {
+            setStorageMode('offline');
+            toast({
+              title: 'Firebase no configurado',
+              description: 'Configure Firebase o importe un archivo JSON',
+              variant: 'destructive',
+            });
+          }
+          setLoading(false);
+        }
+      } else {
+        // Firebase no configurado, usar localStorage directamente
+        setStorageMode('localStorage');
+        setLoading(false);
+        toast({
+          title: 'Modo almacenamiento local',
+          description: 'Firebase no configurado, datos se guardarán localmente',
         });
       }
-    );
+    };
 
-    return () => unsub();
+    initializeStorage();
   }, [toast]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,6 +151,15 @@ export function JSONManager() {
         const data = JSON.parse(e.target?.result as string);
         setJsonData(data);
         setDirty(true);
+        
+        // Guardar inmediatamente en localStorage si no estamos en modo Firebase
+        if (storageMode !== 'firebase') {
+          saveToLocalStorage(data);
+          setStorageMode('localStorage');
+          setSaveStatus('saved');
+          setDirty(false);
+        }
+        
         toast({
           title: "JSON cargado correctamente",
           description: "El archivo se ha importado exitosamente",
@@ -100,9 +183,18 @@ export function JSONManager() {
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `json-data-${new Date().toISOString().split('T')[0]}.json`;
+    
+    const timestamp = new Date().toISOString().split('T')[0];
+    const modePrefix = storageMode === 'localStorage' ? 'backup-local' : 'mcm-data';
+    link.download = `${modePrefix}-${timestamp}.json`;
+    
     link.click();
     URL.revokeObjectURL(url);
+
+    toast({
+      title: "Archivo descargado",
+      description: `Copia de seguridad ${storageMode === 'localStorage' ? 'del almacenamiento local' : ''} guardada`,
+    });
   };
 
   const updateSectionData = (section: ActiveSection, newData: any) => {
@@ -119,10 +211,23 @@ export function JSONManager() {
     setJsonData(updatedData);
     setDirty(true);
     pendingUpdates.current[section] = updatedData[section];
-    toast({
-      title: "Datos actualizados",
-      description: `La sección ${section} se ha actualizado correctamente`,
-    });
+    
+    // Si estamos en modo localStorage, guardar inmediatamente
+    if (storageMode === 'localStorage') {
+      saveToLocalStorage(updatedData);
+      setSaveStatus('saved');
+      setDirty(false);
+      pendingUpdates.current = {};
+      toast({
+        title: "Datos actualizados",
+        description: `La sección ${section} se ha guardado en almacenamiento local`,
+      });
+    } else {
+      toast({
+        title: "Datos actualizados",
+        description: `La sección ${section} se ha actualizado correctamente`,
+      });
+    }
   };
 
   const writePending = async () => {
@@ -147,42 +252,58 @@ export function JSONManager() {
 
   const forceSave = async () => {
     if (!jsonData) return;
+    
     try {
       setSaveStatus('saving');
-      await writePending();
+      
+      if (storageMode === 'firebase') {
+        await writePending();
+        toast({ title: 'Guardado en Firebase', description: 'Los cambios se han sincronizado.' });
+      } else if (storageMode === 'localStorage') {
+        saveToLocalStorage(jsonData);
+        toast({ title: 'Guardado en localStorage', description: 'Los cambios se han guardado localmente.' });
+      }
+      
       setSaveStatus('saved');
       setDirty(false);
       pendingUpdates.current = {};
-      toast({ title: 'Guardado en Firebase', description: 'Los cambios se han sincronizado.' });
     } catch (e) {
       console.error(e);
       setSaveStatus('error');
-      toast({ title: 'Error al guardar', description: 'No se pudo guardar en Firebase', variant: 'destructive' });
+      const errorMsg = storageMode === 'firebase' 
+        ? 'No se pudo guardar en Firebase' 
+        : 'No se pudo guardar en localStorage';
+      toast({ title: 'Error al guardar', description: errorMsg, variant: 'destructive' });
     }
   };
 
-  // Auto-guardado cada 10s si hay cambios
+  // Auto-guardado cada 10s si hay cambios (solo para Firebase)
   useEffect(() => {
     if (saveTimer.current) window.clearInterval(saveTimer.current);
-    saveTimer.current = window.setInterval(() => {
-      if (dirty && jsonData && Object.keys(pendingUpdates.current).length > 0) {
-        setSaveStatus('saving');
-        writePending()
-          .then(() => {
-            setSaveStatus('saved');
-            setDirty(false);
-            pendingUpdates.current = {};
-          })
-          .catch((e) => {
-            console.error(e);
-            setSaveStatus('error');
-          });
-      }
-    }, 10000) as unknown as number;
+    
+    // Solo auto-guardar en Firebase, en localStorage guardamos inmediatamente
+    if (storageMode === 'firebase') {
+      saveTimer.current = window.setInterval(() => {
+        if (dirty && jsonData && Object.keys(pendingUpdates.current).length > 0) {
+          setSaveStatus('saving');
+          writePending()
+            .then(() => {
+              setSaveStatus('saved');
+              setDirty(false);
+              pendingUpdates.current = {};
+            })
+            .catch((e) => {
+              console.error(e);
+              setSaveStatus('error');
+            });
+        }
+      }, 10000) as unknown as number;
+    }
+    
     return () => {
       if (saveTimer.current) window.clearInterval(saveTimer.current);
     };
-  }, [dirty, jsonData]);
+  }, [dirty, jsonData, storageMode]);
 
   if (loading) {
     return (
@@ -288,7 +409,11 @@ export function JSONManager() {
             </div>
             
             <div className="flex items-center gap-2">
-              {import.meta.env.DEV && (
+              <StorageModeIndicator 
+                mode={storageMode} 
+                onDownloadBackup={storageMode === 'localStorage' ? handleDownload : undefined}
+              />
+              {import.meta.env.DEV && storageMode === 'firebase' && (
                 <Button onClick={() => {
                   toast({ title: 'Comprobando conexión…' });
                   set(ref(getDB(), '/__health'), { t: Date.now() })
@@ -299,10 +424,12 @@ export function JSONManager() {
                   Probar conexión
                 </Button>
               )}
-              <Button onClick={handleDownload} variant="outline" size="sm" className="tech-glow">
-                <Download className="w-4 h-4 mr-2" />
-                Descargar JSON
-              </Button>
+              {storageMode !== 'localStorage' && (
+                <Button onClick={handleDownload} variant="outline" size="sm" className="tech-glow">
+                  <Download className="w-4 h-4 mr-2" />
+                  Descargar JSON
+                </Button>
+              )}
               <Button 
                 onClick={forceSave} 
                 size="sm" 
@@ -311,7 +438,7 @@ export function JSONManager() {
                 disabled={!dirty && saveStatus !== 'error'}
               >
                 <Save className="w-4 h-4 mr-2" />
-                Guardar ahora
+                {storageMode === 'localStorage' ? 'Guardar Local' : 'Guardar ahora'}
               </Button>
             </div>
           </header>
@@ -319,16 +446,28 @@ export function JSONManager() {
           {!dirty && (
             <div className="px-6 py-1 text-xs border-b border-border/50 bg-card/20">
               {saveStatus === 'saving' && (
-                <span className="flex items-center text-muted-foreground"><Save className="w-3 h-3 mr-1 animate-pulse" /> Guardando…</span>
+                <span className="flex items-center text-muted-foreground">
+                  <Save className="w-3 h-3 mr-1 animate-pulse" /> 
+                  {storageMode === 'firebase' ? 'Guardando en Firebase…' : 'Guardando localmente…'}
+                </span>
               )}
               {saveStatus === 'saved' && (
-                <span className="flex items-center text-green-500"><CheckCircle2 className="w-3 h-3 mr-1" /> Guardado</span>
+                <span className="flex items-center text-green-500">
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> 
+                  {storageMode === 'firebase' ? 'Guardado en Firebase' : 'Guardado en localStorage'}
+                </span>
               )}
               {saveStatus === 'error' && (
-                <span className="flex items-center text-red-500"><AlertCircle className="w-3 h-3 mr-1" /> Error al guardar</span>
+                <span className="flex items-center text-red-500">
+                  <AlertCircle className="w-3 h-3 mr-1" /> 
+                  Error al guardar {storageMode === 'firebase' ? 'en Firebase' : 'localmente'}
+                </span>
               )}
               {saveStatus === 'idle' && (
-                <span className="flex items-center text-muted-foreground"><CheckCircle2 className="w-3 h-3 mr-1" /> Sin cambios</span>
+                <span className="flex items-center text-muted-foreground">
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> 
+                  {storageMode === 'localStorage' ? 'Sin cambios (modo local)' : 'Sin cambios'}
+                </span>
               )}
             </div>
           )}
