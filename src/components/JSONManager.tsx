@@ -22,7 +22,7 @@ export type JSONData = {
   jubileo?: any;
 };
 
-export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'jubileo' | 'notifications';
+export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'activities' | 'notifications';
 
 export function JSONManager() {
   const [jsonData, setJsonData] = useState<JSONData | null>(null);
@@ -141,8 +141,8 @@ export function JSONManager() {
         return <SongsSection data={jsonData.songs} onUpdate={(data) => updateSectionData('songs', data)} />;
       case 'wordle':
         return <WordleSection data={jsonData.wordle} onUpdate={(data) => updateSectionData('wordle', data)} />;
-      case 'jubileo':
-        return <JubileoSection data={jsonData.jubileo} onUpdate={(data) => updateSectionData('jubileo', data)} />;
+      case 'activities':
+        return <ActivitiesSection data={jsonData} onUpdate={setJsonData} />;
       case 'notifications':
         return <NotificationsSection />;
       default:

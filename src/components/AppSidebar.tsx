@@ -61,10 +61,10 @@ const menuItems = [
     description: 'Palabras diarias'
   },
   {
-    id: 'jubileo' as ActiveSection,
-    title: 'Jubileo',
+    id: 'activities' as ActiveSection,
+    title: 'Actividades',
     icon: Trophy,
-    description: 'Eventos especiales'
+    description: 'Gestión de actividades'
   },
   {
     id: 'notifications' as ActiveSection,
