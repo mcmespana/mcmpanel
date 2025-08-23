@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Upload, Download, FileJson, Cpu } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Upload, Download, FileJson, Cpu, Save, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AppSidebar } from './AppSidebar';
@@ -13,6 +13,8 @@ import { JubileoSection } from './sections/JubileoSection';
 import { ActivitiesSection } from './sections/ActivitiesSection';
 import { NotificationsSection } from './sections/NotificationsSection';
 import { useToast } from '@/hooks/use-toast';
+import { getDB } from '@/lib/firebase';
+import { onValue, ref, set } from 'firebase/database';
 
 export type JSONData = {
   albums?: any;
@@ -28,8 +30,41 @@ export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' 
 
 export function JSONManager() {
   const [jsonData, setJsonData] = useState<JSONData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [dirty, setDirty] = useState(false);
+  const saveTimer = useRef<number | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>('albums');
   const { toast } = useToast();
+
+  // Suscripción en tiempo real a la raíz de la DB
+  useEffect(() => {
+    const db = getDB();
+    const rootRef = ref(db, '/');
+    const unsub = onValue(
+      rootRef,
+      (snap) => {
+        const val = snap.val();
+        if (val && typeof val === 'object') {
+          setJsonData(val);
+        } else {
+          setJsonData({} as JSONData);
+        }
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Firebase onValue error', err);
+        setLoading(false);
+        toast({
+          title: 'Error conectando con Firebase',
+          description: 'Revisa las credenciales y las reglas de la Realtime Database',
+          variant: 'destructive',
+        });
+      }
+    );
+
+    return () => unsub();
+  }, [toast]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -40,6 +75,7 @@ export function JSONManager() {
       try {
         const data = JSON.parse(e.target?.result as string);
         setJsonData(data);
+        setDirty(true);
         toast({
           title: "JSON cargado correctamente",
           description: "El archivo se ha importado exitosamente",
@@ -80,11 +116,62 @@ export function JSONManager() {
     };
     
     setJsonData(updatedData);
+    setDirty(true);
     toast({
       title: "Datos actualizados",
       description: `La sección ${section} se ha actualizado correctamente`,
     });
   };
+
+  const forceSave = async () => {
+    if (!jsonData) return;
+    try {
+      setSaveStatus('saving');
+      await set(ref(getDB(), '/'), jsonData);
+      setSaveStatus('saved');
+      setDirty(false);
+      toast({ title: 'Guardado en Firebase', description: 'Los cambios se han sincronizado.' });
+    } catch (e) {
+      console.error(e);
+      setSaveStatus('error');
+      toast({ title: 'Error al guardar', description: 'No se pudo guardar en Firebase', variant: 'destructive' });
+    }
+  };
+
+  // Auto-guardado cada 10s si hay cambios
+  useEffect(() => {
+    if (saveTimer.current) window.clearInterval(saveTimer.current);
+    saveTimer.current = window.setInterval(() => {
+      if (dirty && jsonData) {
+        setSaveStatus('saving');
+        set(ref(getDB(), '/'), jsonData)
+          .then(() => {
+            setSaveStatus('saved');
+            setDirty(false);
+          })
+          .catch((e) => {
+            console.error(e);
+            setSaveStatus('error');
+          });
+      }
+    }, 10000) as unknown as number;
+    return () => {
+      if (saveTimer.current) window.clearInterval(saveTimer.current);
+    };
+  }, [dirty, jsonData]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg p-8 bg-card/50 backdrop-blur-sm border-border/50 shadow-tech text-center space-y-4">
+          <div className="flex items-center justify-center space-x-2 text-muted-foreground">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+            <span>Conectando con Firebase…</span>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   if (!jsonData) {
     return (
@@ -98,10 +185,10 @@ export function JSONManager() {
             
             <div className="space-y-2">
               <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                JSON Manager Pro
+                MCM Panel · MCM App
               </h1>
               <p className="text-muted-foreground">
-                Sistema avanzado de gestión de configuraciones JSON
+                Conecta a Firebase o importa un JSON como base
               </p>
             </div>
 
@@ -144,7 +231,7 @@ export function JSONManager() {
       case 'wordle':
         return <WordleSection data={jsonData.wordle} onUpdate={(data) => updateSectionData('wordle', data)} />;
       case 'activities':
-        return <ActivitiesSection data={jsonData} onUpdate={setJsonData} />;
+        return <ActivitiesSection data={jsonData} onUpdate={(data) => { setJsonData(data); setDirty(true); }} />;
       case 'notifications':
         return <NotificationsSection />;
       default:
@@ -167,14 +254,48 @@ export function JSONManager() {
               <SidebarTrigger className="text-foreground hover:text-primary" />
               <div className="flex items-center space-x-2">
                 <Cpu className="w-6 h-6 text-primary" />
-                <h1 className="text-xl font-bold">JSON Manager Pro</h1>
+                <h1 className="text-xl font-bold">MCM Panel</h1>
               </div>
             </div>
             
-            <Button onClick={handleDownload} variant="outline" size="sm" className="tech-glow">
-              <Download className="w-4 h-4 mr-2" />
-              Descargar JSON
-            </Button>
+            <div className="flex items-center gap-2">
+              {import.meta.env.DEV && (
+                <Button onClick={() => {
+                  toast({ title: 'Comprobando conexión…' });
+                  set(ref(getDB(), '/__health'), { t: Date.now() })
+                    .then(() => toast({ title: 'Conexión OK', description: 'Se pudo escribir en /__health' }))
+                    .catch(() => toast({ title: 'Fallo de conexión', variant: 'destructive' }));
+                }} variant="ghost" size="sm">
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Probar conexión
+                </Button>
+              )}
+              <Button onClick={forceSave} variant="default" size="sm" className="tech-glow">
+                <Save className="w-4 h-4 mr-2" />
+                Guardar ahora
+              </Button>
+              <Button onClick={handleDownload} variant="outline" size="sm" className="tech-glow">
+                <Download className="w-4 h-4 mr-2" />
+                Descargar JSON
+              </Button>
+              <div className="flex items-center text-xs text-muted-foreground ml-2">
+                {saveStatus === 'saving' && (
+                  <span className="flex items-center"><Save className="w-3 h-3 mr-1 animate-pulse" /> Guardando…</span>
+                )}
+                {saveStatus === 'saved' && (
+                  <span className="flex items-center text-green-500"><CheckCircle2 className="w-3 h-3 mr-1" /> Guardado</span>
+                )}
+                {saveStatus === 'error' && (
+                  <span className="flex items-center text-red-500"><AlertCircle className="w-3 h-3 mr-1" /> Error al guardar</span>
+                )}
+                {saveStatus === 'idle' && !dirty && (
+                  <span className="flex items-center"><CheckCircle2 className="w-3 h-3 mr-1" /> Sin cambios</span>
+                )}
+                {dirty && saveStatus !== 'saving' && (
+                  <span className="ml-2">Cambios sin guardar</span>
+                )}
+              </div>
+            </div>
           </header>
           
           <main className="flex-1 overflow-auto">
