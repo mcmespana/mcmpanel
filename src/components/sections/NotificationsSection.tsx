@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Send, Bell, Users, Target, Smartphone, Image, Clock,
+  Send, Bell, Users, Target, Smartphone, Clock,
   CheckCircle, Plus, Trash2, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw,
 } from 'lucide-react';
@@ -17,8 +17,8 @@ import { getDB } from '@/lib/firebase';
 import { onValue, ref } from 'firebase/database';
 import {
   sendNotification,
-  getNotificationStats,
-  type SendNotificationRequest,
+  getStats,
+  type SendNotificationInput,
   type NotificationRecord,
   type NotificationStats,
   type ActionButton,
@@ -105,14 +105,14 @@ export function NotificationsSection() {
     return () => unsub();
   }, []);
 
-  // Load stats
+  // Load stats from Firebase directly
   const loadStats = useCallback(async () => {
     try {
       setStatsLoading(true);
-      const data = await getNotificationStats();
+      const db = getDB();
+      const data = await getStats(db);
       setStats(data);
     } catch {
-      // Stats may not be available if server is not running
       setStats(null);
     } finally {
       setStatsLoading(false);
@@ -162,7 +162,8 @@ export function NotificationsSection() {
 
     setSending(true);
     try {
-      const payload: SendNotificationRequest = {
+      const db = getDB();
+      const payload: SendNotificationInput = {
         title: form.title.trim(),
         body: form.body.trim(),
         category: form.category,
@@ -175,7 +176,7 @@ export function NotificationsSection() {
         delegacion: form.delegacion || undefined,
       };
 
-      const result = await sendNotification(payload);
+      const result = await sendNotification(db, payload);
 
       toast({
         title: 'Notificación enviada',
@@ -335,9 +336,9 @@ export function NotificationsSection() {
             <Card className="bg-card/50 backdrop-blur-sm border-border/50">
               <CardContent className="p-8 text-center text-muted-foreground">
                 <AlertTriangle className="w-8 h-8 mx-auto mb-3 text-yellow-500" />
-                <p className="font-medium">Servidor de notificaciones no disponible</p>
+                <p className="font-medium">No se pudieron cargar las estadísticas</p>
                 <p className="text-sm mt-1">
-                  Inicia el servidor con <code className="bg-muted px-1.5 py-0.5 rounded text-xs">cd server && npm run dev</code>
+                  Verifica la conexión con Firebase
                 </p>
               </CardContent>
             </Card>
