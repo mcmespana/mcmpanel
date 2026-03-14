@@ -1,6 +1,7 @@
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -9,16 +10,22 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { 
-  Database, 
-  Images, 
-  Calendar, 
-  Music, 
-  Gamepad2, 
+import {
+  Database,
+  Images,
+  Calendar,
+  Music,
+  Gamepad2,
   Trophy,
-  ChevronRight,
   Zap,
-  Bell
+  Bell,
+  Wifi,
+  WifiOff,
+  Cloud,
+  CloudOff,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ActiveSection, JSONData } from "./JSONManager";
@@ -27,6 +34,9 @@ interface AppSidebarProps {
   activeSection: ActiveSection;
   onSectionChange: (section: ActiveSection) => void;
   jsonData: JSONData;
+  firebaseConnected: boolean;
+  saveStatus: 'idle' | 'saving' | 'saved' | 'error';
+  dirty: boolean;
 }
 
 const menuItems = [
@@ -34,153 +44,176 @@ const menuItems = [
     id: 'app' as ActiveSection,
     title: 'App',
     icon: Database,
-    description: 'Feedback y configuración'
+    description: 'Feedback y config',
   },
   {
     id: 'albums' as ActiveSection,
     title: 'Albums',
     icon: Images,
-    description: 'Gestión de álbumes'
+    description: 'Gestión de álbumes',
   },
   {
     id: 'calendars' as ActiveSection,
     title: 'Calendars',
     icon: Calendar,
-    description: 'Configuración de calendarios'
+    description: 'Calendarios',
   },
   {
     id: 'songs' as ActiveSection,
     title: 'Cantoral',
     icon: Music,
-    description: 'Canciones y repertorio'
+    description: 'Canciones y repertorio',
   },
   {
     id: 'wordle' as ActiveSection,
     title: 'Wordle',
     icon: Gamepad2,
-    description: 'Palabras diarias'
+    description: 'Palabras diarias',
   },
   {
     id: 'jubileo' as ActiveSection,
     title: 'Jubileo',
     icon: Trophy,
-    description: 'Contenidos del Jubileo 2025'
+    description: 'Jubileo 2025',
   },
   {
     id: 'activities' as ActiveSection,
     title: 'Actividades',
     icon: Zap,
-    description: 'Gestión de actividades'
+    description: 'Gestión de actividades',
   },
   {
     id: 'notifications' as ActiveSection,
     title: 'Notificaciones',
     icon: Bell,
-    description: 'Push notifications'
+    description: 'Push notifications',
   },
 ];
 
-export function AppSidebar({ activeSection, onSectionChange, jsonData }: AppSidebarProps) {
-  const { state } = useSidebar();
+export function AppSidebar({
+  activeSection,
+  onSectionChange,
+  jsonData,
+  firebaseConnected,
+  saveStatus,
+  dirty,
+}: AppSidebarProps) {
+  const { isMobile, setOpenMobile, state } = useSidebar();
   const collapsed = state === "collapsed";
 
-  const getSectionStatus = (sectionId: ActiveSection) => {
-    const sectionData = jsonData[sectionId];
-    if (!sectionData) return 'empty';
-    
-    if (sectionId === 'app') {
-      const feedbackCount = Object.keys(sectionData.feedback || {}).reduce((total, category) => {
-        return total + Object.keys(sectionData.feedback[category] || {}).length;
-      }, 0);
-      return feedbackCount > 0 ? 'active' : 'empty';
+  const handleSectionChange = (section: ActiveSection) => {
+    onSectionChange(section);
+    if (isMobile) {
+      setOpenMobile(false);
     }
-    
-    if (sectionId === 'songs' && sectionData.data) {
-      const categoriesCount = Object.keys(sectionData.data).length;
-      return categoriesCount > 0 ? 'active' : 'empty';
-    }
-    
-    if (sectionData.data) {
-      return Array.isArray(sectionData.data) ? 
-        sectionData.data.length > 0 ? 'active' : 'empty' :
-        Object.keys(sectionData.data).length > 0 ? 'active' : 'empty';
-    }
-    
-    return Object.keys(sectionData).length > 0 ? 'active' : 'empty';
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-accent/20 border-accent/30';
-      case 'empty': return 'bg-muted/20 border-muted/30';
-      default: return 'bg-muted/20 border-muted/30';
+  const getSectionHasData = (sectionId: ActiveSection): boolean => {
+    if (sectionId === 'notifications') return true;
+    const sectionData = jsonData[sectionId as keyof JSONData];
+    if (!sectionData) return false;
+    if (sectionId === 'app') {
+      return Object.keys(sectionData.feedback || {}).length > 0;
     }
+    if (sectionData.data) {
+      return Array.isArray(sectionData.data)
+        ? sectionData.data.length > 0
+        : Object.keys(sectionData.data).length > 0;
+    }
+    return Object.keys(sectionData).length > 0;
+  };
+
+  const SaveIcon = () => {
+    if (saveStatus === 'saving') return <Loader2 className="w-3 h-3 animate-spin text-primary" />;
+    if (saveStatus === 'saved' && !dirty) return <CheckCircle2 className="w-3 h-3 text-success" />;
+    if (saveStatus === 'error') return <AlertCircle className="w-3 h-3 text-destructive" />;
+    if (dirty) return <Cloud className="w-3 h-3 text-warning animate-pulse" />;
+    return <Cloud className="w-3 h-3 text-muted-foreground/50" />;
+  };
+
+  const saveLabel = () => {
+    if (saveStatus === 'saving') return 'Guardando…';
+    if (saveStatus === 'saved' && !dirty) return 'Guardado';
+    if (saveStatus === 'error') return 'Error al guardar';
+    if (dirty) return 'Cambios pendientes';
+    return 'Sin cambios';
   };
 
   return (
-    <Sidebar className={cn("border-r border-border/50 bg-card/40 backdrop-blur-md", collapsed ? "w-16" : "w-64")}>
-      <SidebarContent className="p-3">
-        <SidebarGroup>
-          <SidebarGroupLabel className="mb-2 text-primary font-bold flex items-center tracking-wide">
-            <Zap className="w-4 h-4 mr-2" />
-            {!collapsed && "Secciones"}
-          </SidebarGroupLabel>
-          
+    <Sidebar className="border-r border-border/40 bg-sidebar">
+      {/* Logo / Header */}
+      <div className={cn(
+        "flex items-center gap-2 px-4 py-4 border-b border-border/40",
+        collapsed && "justify-center px-2"
+      )}>
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
+          <Zap className="w-4 h-4 text-primary" />
+        </div>
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground leading-none">MCM Panel</p>
+            <p className="text-xs text-muted-foreground mt-0.5">MCM App Admin</p>
+          </div>
+        )}
+      </div>
+
+      <SidebarContent className="px-2 py-3">
+        <SidebarGroup className="p-0">
+          {!collapsed && (
+            <SidebarGroupLabel className="px-2 mb-2 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
+              Secciones
+            </SidebarGroupLabel>
+          )}
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-2">
+            <SidebarMenu className="space-y-0.5">
               {menuItems.map((item) => {
                 const isActive = activeSection === item.id;
-                const status = getSectionStatus(item.id);
-                const showIndicator = item.id !== 'notifications';
-                
+                const hasData = getSectionHasData(item.id);
+
                 return (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
-                      onClick={() => onSectionChange(item.id)}
+                      onClick={() => handleSectionChange(item.id)}
+                      tooltip={collapsed ? item.title : undefined}
                       className={cn(
-                        "relative group transition-all duration-200 rounded-lg border px-3 py-2 min-h-12",
-                        isActive 
-                          ? "bg-primary/10 border-primary/30 text-primary shadow-glow" 
-                          : getStatusColor(status),
-                        "hover:bg-primary/5 hover:border-primary/20"
+                        "relative group w-full rounded-lg transition-all duration-150",
+                        collapsed ? "justify-center px-2 py-2 h-10" : "px-3 py-2 h-auto min-h-10",
+                        isActive
+                          ? "bg-primary/12 text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                       )}
                     >
-                      <div className="flex items-center w-full gap-3">
-                        <item.icon className={cn(
-                          "w-5 h-5 transition-colors",
-                          isActive ? "text-primary" : "text-foreground/70"
-                        )} />
-                        
-                        {!collapsed && (
-                          <div className="ml-3 flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium truncate leading-tight">{item.title}</span>
-                              <ChevronRight className={cn(
-                                "w-4 h-4 transition-all duration-200",
-                                isActive ? "rotate-90 text-primary" : "text-muted-foreground group-hover:translate-x-1"
-                              )} />
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1 truncate">
-                              {item.description}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      
+                      {/* Active left bar */}
                       {isActive && (
-                        <div className="absolute inset-0 bg-gradient-primary opacity-5 rounded-lg" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-primary" />
                       )}
-                      {!collapsed && showIndicator && (
-                        <>
-                          <div className={cn(
-                            "absolute right-2 top-1 w-2 h-2 rounded-full",
-                            status === 'active' ? 'bg-success' : 'bg-muted-foreground/40'
-                          )} />
-                          <div className={cn(
-                            "absolute right-2 bottom-1 w-2 h-2 rounded-full",
-                            status === 'active' ? 'bg-success' : 'bg-muted-foreground/40'
-                          )} />
-                        </>
+
+                      <item.icon className={cn(
+                        "flex-shrink-0 transition-colors",
+                        collapsed ? "w-5 h-5" : "w-4 h-4",
+                        isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                      )} />
+
+                      {!collapsed && (
+                        <div className="flex-1 min-w-0 ml-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={cn(
+                              "text-sm font-medium leading-none",
+                              isActive ? "text-primary" : ""
+                            )}>
+                              {item.title}
+                            </span>
+                            {item.id !== 'notifications' && (
+                              <span className={cn(
+                                "flex-shrink-0 w-1.5 h-1.5 rounded-full transition-colors",
+                                hasData ? "bg-success/70" : "bg-muted-foreground/25"
+                              )} />
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground/60 mt-0.5 leading-none truncate">
+                            {item.description}
+                          </p>
+                        </div>
                       )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -190,6 +223,48 @@ export function AppSidebar({ activeSection, onSectionChange, jsonData }: AppSide
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      {/* Footer: connection + save status */}
+      <SidebarFooter className="px-3 py-3 border-t border-border/40">
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-2">
+            <div className={cn(
+              "w-2 h-2 rounded-full flex-shrink-0 transition-colors",
+              firebaseConnected ? "bg-success animate-pulse-subtle" : "bg-destructive/70"
+            )} />
+            <SaveIcon />
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {/* Firebase connection */}
+            <div className="flex items-center gap-2 px-1">
+              <div className={cn(
+                "flex-shrink-0 w-1.5 h-1.5 rounded-full transition-all",
+                firebaseConnected
+                  ? "bg-success animate-pulse-subtle"
+                  : "bg-destructive/70"
+              )} />
+              <span className="text-xs text-muted-foreground/60 truncate">
+                {firebaseConnected ? "Firebase conectado" : "Sin conexión"}
+              </span>
+            </div>
+
+            {/* Save status */}
+            <div className="flex items-center gap-2 px-1">
+              <SaveIcon />
+              <span className={cn(
+                "text-xs truncate",
+                saveStatus === 'saving' ? "text-primary/70" :
+                saveStatus === 'error' ? "text-destructive/70" :
+                dirty ? "text-warning/70" :
+                "text-muted-foreground/50"
+              )}>
+                {saveLabel()}
+              </span>
+            </div>
+          </div>
+        )}
+      </SidebarFooter>
     </Sidebar>
   );
 }
