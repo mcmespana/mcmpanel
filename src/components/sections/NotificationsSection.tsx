@@ -18,7 +18,7 @@ import { onValue, ref } from 'firebase/database';
 import {
   sendNotification,
   getStats,
-  type SendNotificationInput,
+  type SendNotificationRequest,
   type NotificationRecord,
   type NotificationStats,
   type ActionButton,
@@ -162,8 +162,7 @@ export function NotificationsSection() {
 
     setSending(true);
     try {
-      const db = getDB();
-      const payload: SendNotificationInput = {
+      const payload: SendNotificationRequest = {
         title: form.title.trim(),
         body: form.body.trim(),
         category: form.category,
@@ -176,7 +175,7 @@ export function NotificationsSection() {
         delegacion: form.delegacion || undefined,
       };
 
-      const result = await sendNotification(db, payload);
+      const result = await sendNotification(payload);
 
       toast({
         title: 'Notificación enviada',
