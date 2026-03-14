@@ -516,9 +516,9 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
             </div>
           </div>
           <div className="flex space-x-2">
-            <Button onClick={handleDownloadSongs} variant="outline" className="tech-glow">
-              <Download className="w-4 h-4 mr-2" />
-              Descargar Songs.json
+            <Button onClick={handleDownloadSongs} variant="outline" size="sm" className="tech-glow">
+              <Download className="w-4 h-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Descargar Songs.json</span>
             </Button>
           </div>
         </div>

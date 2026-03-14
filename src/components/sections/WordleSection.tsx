@@ -76,41 +76,42 @@ export function WordleSection({ data, onUpdate }: WordleSectionProps) {
   );
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
             Wordle - Palabras Diarias
           </h2>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Gestión de palabras para el juego Wordle diario
           </p>
         </div>
-        
-        <Button onClick={saveChanges} className="tech-glow">
-          <Save className="w-4 h-4 mr-2" />
+
+        <Button onClick={saveChanges} size="sm" className="tech-glow flex-shrink-0 self-start sm:self-auto">
+          <Save className="w-4 h-4 mr-1.5" />
           Guardar Cambios
         </Button>
       </div>
 
       <Card className="p-4 bg-card/50 border-border/50">
-        <div className="flex items-center space-x-4">
-          <div className="flex-1">
-            <Label htmlFor="new-date">Nueva fecha</Label>
+        <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+          <div className="flex-1 w-full sm:w-auto">
+            <Label htmlFor="new-date" className="text-sm">Nueva fecha</Label>
             <Input
               id="new-date"
               type="date"
               value={newDate}
               onChange={(e) => setNewDate(e.target.value)}
-              className="max-w-xs"
+              className="mt-1"
             />
           </div>
-          <Button 
-            onClick={handleAddDate} 
+          <Button
+            onClick={handleAddDate}
             disabled={!newDate}
-            className="tech-glow mt-6"
+            size="sm"
+            className="tech-glow w-full sm:w-auto flex-shrink-0"
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 mr-1.5" />
             Agregar Fecha
           </Button>
         </div>
