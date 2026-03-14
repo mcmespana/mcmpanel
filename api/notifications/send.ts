@@ -1,19 +1,9 @@
-import express from 'express';
-import cors from 'cors';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
-
-const app = express();
-app.use(cors());
-app.use(express.json());
 
 const FIREBASE_DB_URL = process.env.VITE_FIREBASE_DATABASE_URL || process.env.FIREBASE_DATABASE_URL || '';
 const EXPO_PUSH_API = 'https://exp.host/--/api/v2/push/send';
 const CHUNK_SIZE = 100;
-
-if (!FIREBASE_DB_URL) {
-  console.error('FIREBASE_DATABASE_URL not set. Set VITE_FIREBASE_DATABASE_URL or FIREBASE_DATABASE_URL env var.');
-  process.exit(1);
-}
 
 // ─── Firebase REST helpers ───────────────────────────────────────────────────
 
@@ -42,13 +32,11 @@ async function firebasePatch(path: string, data: Record<string, unknown>): Promi
 }
 
 async function firebaseDelete(path: string): Promise<void> {
-  const res = await fetch(`${FIREBASE_DB_URL}${path}.json`, {
-    method: 'DELETE',
-  });
+  const res = await fetch(`${FIREBASE_DB_URL}${path}.json`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Firebase DELETE ${path} failed: ${res.status}`);
 }
 
-// ─── Push Token types ────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface PushTokenRecord {
   token: string;
@@ -57,8 +45,6 @@ interface PushTokenRecord {
   delegacion?: string;
   userType?: string;
 }
-
-// ─── Expo Push helpers ───────────────────────────────────────────────────────
 
 interface ExpoPushMessage {
   to: string;
@@ -76,6 +62,21 @@ interface ExpoPushTicket {
   message?: string;
   details?: { error?: string };
 }
+
+interface SendNotificationBody {
+  title: string;
+  body: string;
+  category?: string;
+  priority?: 'default' | 'normal' | 'high';
+  icon?: string;
+  imageUrl?: string;
+  internalRoute?: string;
+  actionButtons?: Array<{ text: string; url: string }>;
+  recipientType?: string;
+  delegacion?: string;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function sendExpoPushChunk(messages: ExpoPushMessage[]): Promise<ExpoPushTicket[]> {
   const res = await fetch(EXPO_PUSH_API, {
@@ -105,25 +106,19 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-// ─── Notification request type ───────────────────────────────────────────────
+// ─── Handler ─────────────────────────────────────────────────────────────────
 
-interface SendNotificationBody {
-  title: string;
-  body: string;
-  category?: string;
-  priority?: 'default' | 'normal' | 'high';
-  icon?: string;
-  imageUrl?: string;
-  internalRoute?: string;
-  actionButtons?: Array<{ text: string; url: string }>;
-  // Future: filters
-  recipientType?: string;
-  delegacion?: string;
-}
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
 
-// ─── POST /api/notifications/send ────────────────────────────────────────────
+  if (!FIREBASE_DB_URL) {
+    res.status(500).json({ error: 'FIREBASE_DATABASE_URL not configured' });
+    return;
+  }
 
-app.post('/api/notifications/send', async (req, res) => {
   try {
     const body = req.body as SendNotificationBody;
 
@@ -293,75 +288,4 @@ app.post('/api/notifications/send', async (req, res) => {
     console.error('Send notification error:', error);
     res.status(500).json({ error: 'Failed to send notification', details: String(error) });
   }
-});
-
-// ─── GET /api/notifications/stats ────────────────────────────────────────────
-
-app.get('/api/notifications/stats', async (_req, res) => {
-  try {
-    const [pushTokensRaw, notificationsRaw] = await Promise.all([
-      firebaseGet<Record<string, PushTokenRecord>>('/pushTokens'),
-      firebaseGet<Record<string, { sentAt?: string; status?: string }>>('/notifications'),
-    ]);
-
-    // Device stats
-    const now = new Date();
-    const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-    let totalDevices = 0;
-    let active24h = 0;
-    let active7d = 0;
-    const platformBreakdown: Record<string, number> = { ios: 0, android: 0, web: 0, unknown: 0 };
-
-    if (pushTokensRaw && typeof pushTokensRaw === 'object') {
-      const entries = Object.values(pushTokensRaw);
-      totalDevices = entries.length;
-
-      for (const record of entries) {
-        const platform = (typeof record === 'object' && record.platform) || 'unknown';
-        platformBreakdown[platform] = (platformBreakdown[platform] || 0) + 1;
-
-        if (typeof record === 'object' && record.lastActive) {
-          const lastActive = new Date(record.lastActive);
-          if (lastActive >= last24h) active24h++;
-          if (lastActive >= last7d) active7d++;
-        }
-      }
-    }
-
-    // Notification stats
-    let totalNotifications = 0;
-    let totalSent = 0;
-
-    if (notificationsRaw && typeof notificationsRaw === 'object') {
-      const notifications = Object.values(notificationsRaw);
-      totalNotifications = notifications.length;
-      totalSent = notifications.filter((n) => n.status === 'completed').length;
-    }
-
-    res.json({
-      devices: {
-        total: totalDevices,
-        active24h,
-        active7d,
-        platforms: platformBreakdown,
-      },
-      notifications: {
-        total: totalNotifications,
-        sent: totalSent,
-      },
-    });
-  } catch (error) {
-    console.error('Stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch stats', details: String(error) });
-  }
-});
-
-// ─── Start server ────────────────────────────────────────────────────────────
-
-const PORT = parseInt(process.env.PORT || '3001', 10);
-app.listen(PORT, () => {
-  console.log(`Notifications server running on port ${PORT}`);
-  console.log(`Firebase DB: ${FIREBASE_DB_URL.substring(0, 30)}...`);
-});
+}
