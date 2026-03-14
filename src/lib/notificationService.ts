@@ -1,5 +1,11 @@
 import { get, ref, set, remove, update, type Database } from 'firebase/database';
 
+// ─── API Config ──────────────────────────────────────────────────────────────
+
+// The Expo Push proxy runs on Vercel, separate from the Lovable-hosted panel.
+// CORS is enabled on the Vercel function to allow cross-origin requests.
+const VERCEL_API_BASE = import.meta.env.VITE_VERCEL_API_URL || 'https://mcmpanel.vercel.app';
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ActionButton {
@@ -216,8 +222,8 @@ export async function sendNotification(
     return { notificationId, totalTokens: 0, sentCount: 0, failedCount: 0, invalidTokensCleaned: 0 };
   }
 
-  // 5. Call Expo proxy (serverless function)
-  const response = await fetch('/api/notifications/send', {
+  // 5. Call Expo proxy (Vercel serverless function)
+  const response = await fetch(`${VERCEL_API_BASE}/api/notifications/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages }),
