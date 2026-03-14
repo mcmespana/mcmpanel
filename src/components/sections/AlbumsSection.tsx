@@ -98,31 +98,27 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
             Gestión de Álbumes
           </h2>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Última actualización: {data?.updatedAt ? new Date(data.updatedAt).toLocaleDateString('es-ES') : 'No disponible'}
           </p>
         </div>
-        
-        <div className="flex items-center gap-3">
-          <Button onClick={handleCreateAlbum} className="tech-glow">
-            <Plus className="w-4 h-4 mr-2" />
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button onClick={handleCreateAlbum} className="tech-glow" size="sm">
+            <Plus className="w-4 h-4 mr-1.5" />
             Nuevo Álbum
           </Button>
-          <Button onClick={saveChanges} variant={justSaved ? 'default' : 'outline'} className={`tech-glow ${justSaved ? 'bg-success text-success-foreground hover:bg-success/90' : ''}`}>
+          <Button onClick={saveChanges} variant={justSaved ? 'default' : 'outline'} size="sm" className={`tech-glow ${justSaved ? 'bg-success text-success-foreground hover:bg-success/90' : ''}`}>
             {justSaved ? (
-              <>
-                <CheckCircle2 className="w-4 h-4 mr-2" /> Guardado
-              </>
+              <><CheckCircle2 className="w-4 h-4 sm:mr-1.5" /><span className="hidden sm:inline">Guardado</span></>
             ) : (
-              <>
-                <Save className="w-4 h-4 mr-2" /> Guardar Cambios
-              </>
+              <><Save className="w-4 h-4 sm:mr-1.5" /><span className="hidden sm:inline">Guardar</span></>
             )}
           </Button>
         </div>
@@ -141,51 +137,58 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
               onDragStart={() => handleDragStart(index)}
               onDragOver={(e) => handleDragOver(e, index)}
               onDragEnd={() => setDraggedIndex(null)}
-              className="p-4 bg-card/50 border-border/50 hover:bg-card/70 transition-all cursor-move"
+              className="p-3 sm:p-4 bg-card/50 border-border/50 hover:bg-card/70 transition-all cursor-move"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <GripVertical className="w-4 h-4 text-muted-foreground" />
-                  <div className="w-16 h-10 bg-muted rounded overflow-hidden flex items-center justify-center">
-                    {album.imageUrl ? (
-                      <img src={album.imageUrl} alt={album.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <ImageIcon className="w-5 h-5 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="w-12 h-10 bg-muted rounded-lg flex items-center justify-center text-sm font-mono">
-                    #{album.id}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold leading-tight">{album.title || 'Sin título'}</h3>
-                    <p className="text-xs text-muted-foreground leading-tight">{album.location || 'Sin ubicación'}{album.date ? ` · ${album.date}` : ''}</p>
-                  </div>
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* Drag handle */}
+                <GripVertical className="w-4 h-4 text-muted-foreground flex-shrink-0 hidden sm:block" />
+
+                {/* Thumbnail */}
+                <div className="w-10 h-10 sm:w-14 sm:h-10 bg-muted rounded overflow-hidden flex items-center justify-center flex-shrink-0">
+                  {album.imageUrl ? (
+                    <img src={album.imageUrl} alt={album.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                  )}
                 </div>
-                
-                <div className="flex items-center space-x-2">
+
+                {/* ID badge */}
+                <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded flex-shrink-0">
+                  #{album.id}
+                </span>
+
+                {/* Title + subtitle — flex-1 to push buttons to right */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm leading-tight truncate">{album.title || 'Sin título'}</h3>
+                  <p className="text-xs text-muted-foreground leading-tight truncate">
+                    {album.location || 'Sin ubicación'}{album.date ? ` · ${album.date}` : ''}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 flex-shrink-0">
                   {album.albumUrl && (
-                    <Button variant="outline" size="sm" asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
                       <a href={album.albumUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
                   )}
-                  
-                  <Button 
-                    variant="outline" 
-                    size="sm"
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
                     onClick={() => { setEditingAlbum(album); setIsCreating(false); }}
                   >
-                    <Edit3 className="w-4 h-4" />
+                    <Edit3 className="w-3.5 h-3.5" />
                   </Button>
-                  
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => handleDeleteAlbum(album.id)}
-                    className="text-destructive hover:text-destructive"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
               </div>

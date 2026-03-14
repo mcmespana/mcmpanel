@@ -78,25 +78,25 @@ export function CalendarsSection({ data, onUpdate }: CalendarsSectionProps) {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
             Configuración de Calendarios
           </h2>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Última actualización: {data?.updatedAt ? new Date(data.updatedAt).toLocaleDateString('es-ES') : 'No disponible'}
           </p>
         </div>
-        
-        <div className="flex space-x-3">
-          <Button onClick={handleCreateCalendar} className="tech-glow">
-            <Plus className="w-4 h-4 mr-2" />
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button onClick={handleCreateCalendar} className="tech-glow" size="sm">
+            <Plus className="w-4 h-4 mr-1.5" />
             Nuevo Calendario
           </Button>
-          <Button onClick={saveChanges} variant="outline" className="tech-glow">
-            <Save className="w-4 h-4 mr-2" />
-            Guardar Cambios
+          <Button onClick={saveChanges} variant="outline" size="sm" className="tech-glow">
+            <Save className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Guardar</span>
           </Button>
         </div>
       </div>
@@ -108,74 +108,64 @@ export function CalendarsSection({ data, onUpdate }: CalendarsSectionProps) {
           </Card>
         ) : (
           calendars.map((calendar) => (
-            <Card key={calendar.id} className="p-4 bg-card/50 border-border/50 hover:bg-card/70 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div 
-                    className="w-6 h-6 rounded-full border-2 border-white/20"
+            <Card key={calendar.id} className="p-3 sm:p-4 bg-card/50 border-border/50 hover:bg-card/70 transition-colors">
+              <div className="flex items-center gap-3">
+                {/* Color dot + icon */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div
+                    className="w-5 h-5 rounded-full border border-white/20 flex-shrink-0"
                     style={{ backgroundColor: calendar.color }}
                   />
-                  <Calendar className="w-5 h-5 text-muted-foreground" />
-                  <div>
-                    <h3 className="font-semibold flex items-center space-x-2">
-                      <span>{calendar.name}</span>
-                      {calendar.defaultSelected && (
-                        <span className="text-xs bg-primary/20 text-primary px-2 py-1 rounded">
-                          Por defecto
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-sm text-muted-foreground font-mono">
-                      ID: {calendar.id}
-                    </p>
+                  <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                </div>
+
+                {/* Name + ID — flex-1 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm leading-tight">{calendar.name}</span>
+                    {calendar.defaultSelected && (
+                      <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded leading-none">
+                        Por defecto
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-xs text-muted-foreground font-mono truncate">ID: {calendar.id}</p>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <Checkbox
+                        checked={calendar.defaultSelected}
+                        onCheckedChange={(checked) => handleToggleDefault(calendar.id, checked as boolean)}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span className="text-xs text-muted-foreground">Predeterminado</span>
+                    </label>
                   </div>
                 </div>
-                
-                <div className="flex items-center space-x-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      checked={calendar.defaultSelected}
-                      onCheckedChange={(checked) => 
-                        handleToggleDefault(calendar.id, checked as boolean)
-                      }
-                    />
-                    <Label className="text-sm">Predeterminado</Label>
-                  </div>
-                  
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 flex-shrink-0">
                   {calendar.url && (
-                    <Button variant="outline" size="sm" asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
                       <a href={calendar.url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="w-4 h-4" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
                   )}
-                  
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => setEditingCalendar(calendar)}
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-md">
-                      <CalendarEditor
-                        calendar={editingCalendar}
-                        onSave={handleSaveCalendar}
-                        onCancel={() => setEditingCalendar(null)}
-                      />
-                    </DialogContent>
-                  </Dialog>
-                  
                   <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDeleteCalendar(calendar.id)}
-                    className="text-destructive hover:text-destructive"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setEditingCalendar(calendar)}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteCalendar(calendar.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
               </div>

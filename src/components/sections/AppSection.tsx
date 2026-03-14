@@ -182,27 +182,20 @@ export function AppSection({ data, onUpdate }: AppSectionProps) {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
             Feedback de la App
           </h2>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Gestión de comentarios, errores y sugerencias
           </p>
         </div>
-        
-        <Button onClick={saveChanges} className={`tech-glow ${justSaved ? 'bg-success text-success-foreground hover:bg-success/90' : ''}`}>
-          {justSaved ? (
-            <>
-              <MessageSquare className="w-4 h-4 mr-2" /> Guardado
-            </>
-          ) : (
-            <>
-              <MessageSquare className="w-4 h-4 mr-2" /> Guardar Cambios
-            </>
-          )}
+
+        <Button onClick={saveChanges} size="sm" className={`tech-glow flex-shrink-0 self-start sm:self-auto ${justSaved ? 'bg-success text-success-foreground hover:bg-success/90' : ''}`}>
+          <MessageSquare className="w-4 h-4 mr-1.5" />
+          {justSaved ? 'Guardado' : 'Guardar Cambios'}
         </Button>
       </div>
 
