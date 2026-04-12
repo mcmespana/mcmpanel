@@ -71,12 +71,6 @@ const menuItems = [
     description: 'Palabras diarias',
   },
   {
-    id: 'jubileo' as ActiveSection,
-    title: 'Jubileo',
-    icon: Trophy,
-    description: 'Jubileo 2025',
-  },
-  {
     id: 'activities' as ActiveSection,
     title: 'Actividades',
     icon: Zap,
