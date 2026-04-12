@@ -9,7 +9,6 @@ import { AppSection } from './sections/AppSection';
 import { CalendarsSection } from './sections/CalendarsSection';
 import { SongsSection } from './sections/SongsSection';
 import { WordleSection } from './sections/WordleSection';
-import { JubileoSection } from './sections/JubileoSection';
 import { ActivitiesSection } from './sections/ActivitiesSection';
 import { NotificationsSection } from './sections/NotificationsSection';
 import { useToast } from '@/hooks/use-toast';
@@ -27,7 +26,7 @@ export type JSONData = {
   activities?: any;
 };
 
-export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'jubileo' | 'activities' | 'notifications';
+export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'activities' | 'notifications';
 
 const SECTION_LABELS: Record<ActiveSection, string> = {
   albums: 'Albums',
@@ -35,7 +34,6 @@ const SECTION_LABELS: Record<ActiveSection, string> = {
   calendars: 'Calendars',
   songs: 'Cantoral',
   wordle: 'Wordle',
-  jubileo: 'Jubileo',
   activities: 'Actividades',
   notifications: 'Notificaciones',
 };
@@ -234,15 +232,20 @@ export function JSONManager() {
         return <SongsSection data={jsonData!.songs} onUpdate={(data) => updateSectionData('songs', data)} />;
       case 'wordle':
         return <WordleSection data={jsonData!.wordle} onUpdate={(data) => updateSectionData('wordle', data)} />;
-      case 'jubileo':
-        return (
-          <ActivitiesSection
-            data={jsonData!.jubileo ? { jubileo: jsonData!.jubileo } : {}}
-            onUpdate={(data) => updateSectionData('jubileo', data.jubileo)}
-          />
-        );
-      case 'activities':
-        return <ActivitiesSection data={jsonData!.activities || {}} onUpdate={(data) => updateSectionData('activities', data)} />;
+      case 'activities': {
+        const combinedData = {
+          ...((jsonData!.activities && typeof jsonData!.activities === 'object') ? jsonData!.activities : {}),
+          ...(jsonData!.jubileo ? { jubileo: jsonData!.jubileo } : {})
+        };
+        const handleActivitiesUpdate = (updatedData: any) => {
+          const { jubileo, ...restActivities } = updatedData;
+          if (jubileo !== undefined) {
+            updateSectionData('jubileo', jubileo);
+          }
+          updateSectionData('activities', restActivities);
+        };
+        return <ActivitiesSection data={combinedData} onUpdate={handleActivitiesUpdate} />;
+      }
       case 'notifications':
         return <NotificationsSection />;
       default:

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { AppsSubsection } from './activities/AppsSubsection';
 import { CompartiendoSubsection } from './activities/CompartiendoSubsection';
 import { ContactosSubsection } from './activities/ContactosSubsection';
@@ -42,14 +43,14 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
     if (!activityName?.trim()) return;
 
     const newActivityStructure = {
-      apps: { data: [], updatedAt: new Date().toISOString() },
-      compartiendo: { data: {}, updatedAt: new Date().toISOString() },
-      contactos: { data: [], updatedAt: new Date().toISOString() },
-      grupos: { data: {}, updatedAt: new Date().toISOString() },
-      horario: { data: [], updatedAt: new Date().toISOString() },
-      materiales: { data: [], updatedAt: new Date().toISOString() },
-      profundiza: { data: { introduccion: '', paginas: [] }, updatedAt: new Date().toISOString() },
-      visitas: { data: [], updatedAt: new Date().toISOString() },
+      apps: { data: [], hidden: false, updatedAt: new Date().toISOString() },
+      compartiendo: { data: {}, hidden: false, updatedAt: new Date().toISOString() },
+      contactos: { data: [], hidden: false, updatedAt: new Date().toISOString() },
+      grupos: { data: {}, hidden: false, updatedAt: new Date().toISOString() },
+      horario: { data: [], hidden: false, updatedAt: new Date().toISOString() },
+      materiales: { data: [], hidden: false, updatedAt: new Date().toISOString() },
+      profundiza: { data: { introduccion: '', paginas: [] }, hidden: false, updatedAt: new Date().toISOString() },
+      visitas: { data: [], hidden: false, updatedAt: new Date().toISOString() },
     };
 
     onUpdate({
@@ -57,6 +58,25 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
       [activityName]: newActivityStructure,
     });
     setSelectedActivity(activityName);
+  };
+
+  const handleToggleHidden = (subsectionId: SubsectionId, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!selectedActivity || !currentActivityData) return;
+
+    const subsectionData = currentActivityData[subsectionId];
+
+    onUpdate({
+      ...data,
+      [selectedActivity]: {
+        ...currentActivityData,
+        [subsectionId]: {
+          ...subsectionData,
+          hidden: !subsectionData?.hidden,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
   };
 
   const handleSubsectionUpdate = (subsectionData: any) => {
@@ -165,23 +185,36 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
             return (
               <Card
                 key={subsection.id}
-                className="p-6 cursor-pointer transition-all hover:border-primary/30 hover:bg-card/80"
+                className={`p-6 cursor-pointer transition-all hover:border-primary/30 hover:bg-card/80 ${subsectionData?.hidden ? 'opacity-60' : ''}`}
                 onClick={() => setSelectedSubsection(subsection.id)}
               >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold">{subsection.title}</h3>
-                    <div className={`w-2 h-2 rounded-full ${hasData ? 'bg-success' : 'bg-muted'}`} />
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {subsection.description}
-                  </p>
-                  {subsectionData?.updatedAt && (
-                    <p className="text-xs text-muted-foreground">
-                      Actualizado: {new Date(subsectionData.updatedAt).toLocaleString()}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">{subsection.title}</h3>
+                      <div className={`w-2 h-2 rounded-full ${hasData ? 'bg-success' : 'bg-muted'}`} />
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {subsection.description}
                     </p>
-                  )}
-                </div>
+                    {subsectionData?.updatedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Actualizado: {new Date(subsectionData.updatedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-border/50" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      {subsectionData?.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <span>{subsectionData?.hidden ? 'Oculta' : 'Visible'}</span>
+                    </div>
+                    <Switch
+                      checked={!subsectionData?.hidden}
+                      onCheckedChange={() => handleToggleHidden(subsection.id, { stopPropagation: () => {} } as any)}
+                    />
+                  </div>
+                 </div>
               </Card>
             );
           })}
