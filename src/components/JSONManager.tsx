@@ -53,36 +53,54 @@ export function JSONManager() {
 
   // Track Firebase connection status via .info/connected
   useEffect(() => {
-    const db = getDB();
-    const connRef = ref(db, '.info/connected');
-    const unsub = onValue(connRef, (snap) => {
-      setFirebaseConnected(snap.val() === true);
-    });
-    return () => unsub();
+    try {
+      const db = getDB();
+      const connRef = ref(db, '.info/connected');
+      const unsub = onValue(connRef, (snap) => {
+        setFirebaseConnected(snap.val() === true);
+      });
+      return () => unsub();
+    } catch(e) {
+      console.error(e);
+    }
   }, []);
 
   // Real-time subscription to database root
   useEffect(() => {
-    const db = getDB();
-    const rootRef = ref(db, '/');
-    const unsub = onValue(
-      rootRef,
-      (snap) => {
-        const val = snap.val();
-        setJsonData(val && typeof val === 'object' ? val : {} as JSONData);
+    try {
+      const db = getDB();
+      const rootRef = ref(db, '/');
+      const unsub = onValue(
+        rootRef,
+        (snap) => {
+          const val = snap.val();
+          setJsonData(val && typeof val === 'object' ? val : {} as JSONData);
+          setLoading(false);
+        },
+        (err) => {
+          console.error('Firebase onValue error', err);
+          setLoading(false);
+          toast({
+            title: 'Error conectando con Firebase',
+            description: 'Revisa las credenciales y las reglas de la Realtime Database',
+            variant: 'destructive',
+          });
+        }
+      );
+
+      // If no response from Firebase after 3s, show upload screen
+      const timer = setTimeout(() => {
         setLoading(false);
-      },
-      (err) => {
-        console.error('Firebase onValue error', err);
-        setLoading(false);
-        toast({
-          title: 'Error conectando con Firebase',
-          description: 'Revisa las credenciales y las reglas de la Realtime Database',
-          variant: 'destructive',
-        });
-      }
-    );
-    return () => unsub();
+      }, 3000);
+
+      return () => {
+        unsub();
+        clearTimeout(timer);
+      };
+    } catch (e) {
+       console.error("Firebase connection error", e);
+       setLoading(false);
+    }
   }, [toast]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
