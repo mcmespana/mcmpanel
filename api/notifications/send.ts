@@ -202,8 +202,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }));
 
     // Build Expo push messages
+    const seenTokens = new Set<string>();
     const messages: (ExpoPushMessage & { _tokenKey: string })[] = tokens
-      .filter((t) => t.token && t.token.startsWith('ExponentPushToken['))
+      .filter((t) => {
+        if (!t.token || !t.token.startsWith('ExponentPushToken[')) return false;
+        if (seenTokens.has(t.token)) return false;
+        seenTokens.add(t.token);
+        return true;
+      })
       .map((t) => ({
         _tokenKey: t.key,
         to: t.token,
