@@ -6,6 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { MultiSelect } from './profile/MultiSelect';
+import { ALBUM_TAG_LABELS, KNOWN_ALBUM_TAGS } from '@/lib/profileCatalog';
 
 interface Album {
   id: string;
@@ -14,6 +16,7 @@ interface Album {
   imageUrl: string;
   date: string;
   location: string;
+  tags?: string[];
 }
 
 interface AlbumsSectionProps {
@@ -159,7 +162,14 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
 
                 {/* Title + subtitle — flex-1 to push buttons to right */}
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm leading-tight truncate">{album.title || 'Sin título'}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-sm leading-tight truncate">{album.title || 'Sin título'}</h3>
+                    {album.tags?.map((t) => (
+                      <span key={t} className="text-[10px] bg-primary/10 text-primary px-1.5 rounded leading-none">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
                   <p className="text-xs text-muted-foreground leading-tight truncate">
                     {album.location || 'Sin ubicación'}{album.date ? ` · ${album.date}` : ''}
                   </p>
@@ -235,9 +245,14 @@ function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
     onSave(formData);
   };
 
-  const handleChange = (field: keyof Album, value: string) => {
+  const handleChange = (field: keyof Album, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
+
+  const tagOptions = KNOWN_ALBUM_TAGS.filter((t) => t !== 'all').map((id) => ({
+    id,
+    label: ALBUM_TAG_LABELS[id] ?? id,
+  }));
 
   return (
     <>
@@ -298,7 +313,15 @@ function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
             placeholder="Ciudad, país"
           />
         </div>
-        
+
+        <MultiSelect
+          label="Tags de visibilidad"
+          description="Sin tags = todos lo ven. Con tags = solo perfiles con esa etiqueta (o albumTags=all)."
+          options={tagOptions}
+          value={formData.tags ?? []}
+          onChange={(v) => handleChange('tags', v.length === 0 ? undefined : v)}
+        />
+
         <div className="flex justify-end space-x-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>
             <X className="w-4 h-4 mr-2" />

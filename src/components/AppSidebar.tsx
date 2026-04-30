@@ -19,6 +19,7 @@ import {
   Trophy,
   Zap,
   Bell,
+  Users,
   Wifi,
   WifiOff,
   Cloud,
@@ -82,6 +83,12 @@ const menuItems = [
     icon: Bell,
     description: 'Push notifications',
   },
+  {
+    id: 'profileConfig' as ActiveSection,
+    title: 'Perfiles',
+    icon: Users,
+    description: 'Perfiles, delegaciones, sistema',
+  },
 ];
 
 export function AppSidebar({
@@ -107,12 +114,15 @@ export function AppSidebar({
     const sectionData = jsonData[sectionId as keyof JSONData];
     if (!sectionData) return false;
     if (sectionId === 'app') {
-      return Object.keys(sectionData.feedback || {}).length > 0;
+      return Object.keys((sectionData as any).feedback || {}).length > 0;
     }
-    if (sectionData.data) {
-      return Array.isArray(sectionData.data)
-        ? sectionData.data.length > 0
-        : Object.keys(sectionData.data).length > 0;
+    if (sectionId === 'profileConfig') {
+      return !!(sectionData as any).data;
+    }
+    if ((sectionData as any).data) {
+      return Array.isArray((sectionData as any).data)
+        ? (sectionData as any).data.length > 0
+        : Object.keys((sectionData as any).data).length > 0;
     }
     return Object.keys(sectionData).length > 0;
   };

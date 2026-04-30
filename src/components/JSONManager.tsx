@@ -11,6 +11,8 @@ import { SongsSection } from './sections/SongsSection';
 import { WordleSection } from './sections/WordleSection';
 import { ActivitiesSection } from './sections/ActivitiesSection';
 import { NotificationsSection } from './sections/NotificationsSection';
+import { ProfileConfigSection } from './sections/ProfileConfigSection';
+import type { ProfileConfigDocument } from '@/types/profileConfig';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref, set } from 'firebase/database';
@@ -24,9 +26,10 @@ export type JSONData = {
   wordle?: any;
   jubileo?: any;
   activities?: any;
+  profileConfig?: ProfileConfigDocument;
 };
 
-export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'activities' | 'notifications';
+export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'activities' | 'notifications' | 'profileConfig';
 
 const SECTION_LABELS: Record<ActiveSection, string> = {
   albums: 'Albums',
@@ -36,6 +39,7 @@ const SECTION_LABELS: Record<ActiveSection, string> = {
   wordle: 'Wordle',
   activities: 'Actividades',
   notifications: 'Notificaciones',
+  profileConfig: 'Perfiles & Sistema',
 };
 
 export function JSONManager() {
@@ -114,13 +118,14 @@ export function JSONManager() {
 
   const updateSectionData = (section: ActiveSection, newData: any) => {
     if (!jsonData) return;
-    const updatedData = {
-      ...jsonData,
-      [section]: { ...newData, updatedAt: new Date().toISOString() }
-    };
+    // profileConfig already arrives shaped as { updatedAt, data } — don't double-wrap.
+    const value = section === 'profileConfig'
+      ? newData
+      : { ...newData, updatedAt: new Date().toISOString() };
+    const updatedData = { ...jsonData, [section]: value };
     setJsonData(updatedData);
     setDirty(true);
-    pendingUpdates.current[section] = updatedData[section];
+    pendingUpdates.current[section] = updatedData[section as keyof JSONData];
   };
 
   const writePending = async () => {
@@ -248,6 +253,14 @@ export function JSONManager() {
       }
       case 'notifications':
         return <NotificationsSection />;
+      case 'profileConfig':
+        return (
+          <ProfileConfigSection
+            data={jsonData!.profileConfig}
+            calendarsRoot={jsonData!.calendars}
+            onUpdate={(next) => updateSectionData('profileConfig', next)}
+          />
+        );
       default:
         return <div className="p-8 text-center text-muted-foreground">Sección en desarrollo</div>;
     }
