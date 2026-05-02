@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Database, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, Database, Download, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,6 +8,7 @@ import { DelegationsEditor } from './profile/DelegationsEditor';
 import { OverridesEditor } from './profile/OverridesEditor';
 import { SystemEditor } from './profile/SystemEditor';
 import { SEED_PROFILE_CONFIG } from '@/lib/profileConfigSeed';
+import { useToast } from '@/hooks/use-toast';
 import type { ProfileConfigData, ProfileConfigDocument } from '@/types/profileConfig';
 
 interface ProfileConfigSectionProps {
@@ -17,7 +18,9 @@ interface ProfileConfigSectionProps {
 }
 
 export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileConfigSectionProps) {
+  const { toast } = useToast();
   const calendars = useMemo(() => extractCalendars(calendarsRoot), [calendarsRoot]);
+  const reminderShownRef = useRef(false);
 
   const [draft, setDraft] = useState<ProfileConfigData | null>(
     data?.data ? sanitizeData(data.data) : null,
@@ -38,12 +41,36 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
     onUpdate(seedDoc);
   };
 
+  const handleDownload = () => {
+    if (!draft) return;
+    const json = JSON.stringify(draft, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'profileConfig.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    reminderShownRef.current = false;
+    toast({
+      title: 'JSON descargado',
+      description: 'Súbelo al repo para que las próximas builds de la app lo incluyan.',
+    });
+  };
+
   const handleChange = (next: ProfileConfigData) => {
     setDraft(next);
     onUpdate({
       updatedAt: new Date().toISOString(),
       data: next,
     });
+    if (!reminderShownRef.current) {
+      reminderShownRef.current = true;
+      toast({
+        title: '¡Recuerda sincronizar el JSON!',
+        description: 'Descárgalo y súbelo al repo para que las futuras builds de la app tengan estos cambios.',
+      });
+    }
   };
 
   if (!draft) {
@@ -104,6 +131,10 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
               : '—'}
           </p>
         </div>
+        <Button variant="outline" size="sm" onClick={handleDownload}>
+          <Download className="w-4 h-4 mr-2" />
+          Descargar JSON
+        </Button>
       </div>
 
       {warnings.length > 0 && (
