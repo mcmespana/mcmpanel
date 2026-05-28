@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Upload, Download, FileJson, Cpu, Save, RefreshCw } from 'lucide-react';
+import { Upload, Download, FileJson, Cpu, Save, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AppSidebar } from './AppSidebar';
@@ -13,6 +13,8 @@ import { ActivitiesSection } from './sections/ActivitiesSection';
 import { NotificationsSection } from './sections/NotificationsSection';
 import { ProfileConfigSection } from './sections/ProfileConfigSection';
 import type { ProfileConfigDocument } from '@/types/profileConfig';
+import { SEED_PROFILE_CONFIG } from '@/lib/profileConfigSeed';
+import { disableAppReviewMode, enableAppReviewMode } from '@/lib/appReviewMode';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref, set } from 'firebase/database';
@@ -126,6 +128,24 @@ export function JSONManager() {
     setJsonData(updatedData);
     setDirty(true);
     pendingUpdates.current[section] = updatedData[section as keyof JSONData];
+  };
+
+  const appReviewActive = !!jsonData?.profileConfig?.data?.global?.appReviewMode;
+
+  const handleToggleAppReview = (next: boolean) => {
+    const currentData = jsonData?.profileConfig?.data ?? SEED_PROFILE_CONFIG;
+    const updated = next ? enableAppReviewMode(currentData) : disableAppReviewMode(currentData);
+    const doc: ProfileConfigDocument = {
+      updatedAt: new Date().toISOString(),
+      data: updated,
+    };
+    updateSectionData('profileConfig', doc);
+    toast({
+      title: next ? 'Modo revisión activado' : 'Modo revisión desactivado',
+      description: next
+        ? 'Cantoral y Comunica ocultos en todos los perfiles. Backup guardado.'
+        : 'Tabs anteriores restauradas desde backup.',
+    });
   };
 
   const writePending = async () => {
@@ -276,6 +296,8 @@ export function JSONManager() {
           firebaseConnected={firebaseConnected}
           saveStatus={saveStatus}
           dirty={dirty}
+          appReviewMode={appReviewActive}
+          onToggleAppReviewMode={handleToggleAppReview}
         />
 
         <div className="flex-1 flex flex-col min-w-0">
@@ -333,6 +355,18 @@ export function JSONManager() {
               </Button>
             </div>
           </header>
+
+          {appReviewActive && (
+            <button
+              type="button"
+              onClick={() => handleToggleAppReview(false)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-warning/15 hover:bg-warning/25 border-b border-warning/40 transition-colors text-warning text-xs sm:text-sm font-semibold"
+              title="Desactivar Modo revisión de app"
+            >
+              <ShieldAlert className="w-4 h-4 animate-pulse-subtle" />
+              <span>Modo revisión ACTIVO · Cantoral y Comunica ocultos · toca para desactivar</span>
+            </button>
+          )}
 
           <main className="flex-1 overflow-auto">
             {renderActiveSection()}

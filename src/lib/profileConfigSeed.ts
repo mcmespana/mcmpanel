@@ -9,6 +9,7 @@ export const SEED_PROFILE_CONFIG: ProfileConfigData = {
     maintenanceMode: false,
     maintenanceMessage: '',
     minAppVersion: '0.0.0',
+    appReviewMode: false,
   },
   profiles: {
     familia: {
