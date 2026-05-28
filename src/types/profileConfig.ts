@@ -35,9 +35,28 @@ export interface GlobalConfig {
   maintenanceMode: boolean;
   maintenanceMessage?: string;
   minAppVersion: string;
+  appReviewMode?: boolean;
 }
 
 export type OverrideKey = `${ProfileType}:${string}`;
+
+export interface AppReviewBackupEntry {
+  tabs?: string[];
+  homeButtons?: string[];
+  masItems?: string[];
+  extraTabs?: string[];
+  extraHomeButtons?: string[];
+  extraMasItems?: string[];
+}
+
+export interface AppReviewBackup {
+  enabledAt: string;
+  profiles: Partial<Record<ProfileType, AppReviewBackupEntry>>;
+  overrides?: Record<string, AppReviewBackupEntry>;
+  delegations?: Record<string, AppReviewBackupEntry & {
+    override?: AppReviewBackupEntry;
+  }>;
+}
 
 export interface ProfileConfigData {
   global: GlobalConfig;
@@ -45,6 +64,7 @@ export interface ProfileConfigData {
   delegations: Record<string, Delegation> & { _default: Delegation };
   delegationList: DelegationListItem[];
   overrides?: Partial<Record<OverrideKey, Partial<ProfileBase>>>;
+  appReviewBackup?: AppReviewBackup;
 }
 
 export interface ProfileConfigDocument {

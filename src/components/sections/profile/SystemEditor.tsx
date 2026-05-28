@@ -10,8 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ShieldAlert } from 'lucide-react';
 import { KNOWN_TABS, SEMVER_REGEX, TAB_LABELS } from '@/lib/profileCatalog';
+import {
+  disableAppReviewMode,
+  enableAppReviewMode,
+} from '@/lib/appReviewMode';
 import type { GlobalConfig, ProfileConfigData } from '@/types/profileConfig';
 
 interface SystemEditorProps {
@@ -27,6 +31,7 @@ const DEFAULT_GLOBAL: GlobalConfig = {
   maintenanceMode: false,
   maintenanceMessage: '',
   minAppVersion: '0.0.0',
+  appReviewMode: false,
 };
 
 export function SystemEditor({ data, onChange }: SystemEditorProps) {
@@ -36,7 +41,19 @@ export function SystemEditor({ data, onChange }: SystemEditorProps) {
     onChange({ ...data, global: { ...global, ...patch } });
   };
 
+  const toggleAppReview = (v: boolean) => {
+    if (v) {
+      if (!confirm(
+        '¿Activar Modo revisión de app?\n\nSe ocultarán Cantoral y todas las secciones de Comunica en TODOS los perfiles. Los valores actuales se guardarán como backup para poder restaurarlos al desactivarlo.',
+      )) return;
+      onChange(enableAppReviewMode(data));
+    } else {
+      onChange(disableAppReviewMode(data));
+    }
+  };
+
   const semverValid = SEMVER_REGEX.test(global.minAppVersion);
+  const appReviewOn = !!global.appReviewMode;
 
   return (
     <div className="space-y-4">
@@ -80,6 +97,32 @@ export function SystemEditor({ data, onChange }: SystemEditorProps) {
           checked={global.showChangeNameButton}
           onChange={(v) => update({ showChangeNameButton: v })}
         />
+      </Card>
+
+      <Card className={`p-4 sm:p-5 space-y-3 border ${appReviewOn ? 'border-warning/50 bg-warning/5' : 'bg-card/50 border-border/50'}`}>
+        <div className="flex items-start gap-3">
+          {appReviewOn && (
+            <ShieldAlert className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1">
+            <h3 className="text-base font-semibold">Modo revisión de app</h3>
+            <p className="text-xs text-muted-foreground">
+              Oculta <strong>Cantoral</strong> y todas las secciones de <strong>Comunica</strong> en
+              <em> todos</em> los perfiles (tabs, home, menú Más, overrides y delegaciones). Pensado
+              para pasar la revisión de Apple App Store. Al desactivarlo se restaura el estado anterior.
+            </p>
+          </div>
+          <Switch
+            checked={appReviewOn}
+            onCheckedChange={toggleAppReview}
+          />
+        </div>
+        {appReviewOn && data.appReviewBackup?.enabledAt && (
+          <p className="text-xs text-warning-foreground/80 pl-8">
+            Activado el {new Date(data.appReviewBackup.enabledAt).toLocaleString('es-ES')}.
+            Backup listo para restaurar.
+          </p>
+        )}
       </Card>
 
       <Card className={`p-4 sm:p-5 space-y-4 border ${global.maintenanceMode ? 'border-destructive/40 bg-destructive/5' : 'bg-card/50 border-border/50'}`}>
