@@ -34,7 +34,7 @@ const subsections = [
 ];
 
 export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
-  const [selectedActivity, setSelectedActivity] = useState<ActivityId | null>('jubileo');
+  const [selectedActivity, setSelectedActivity] = useState<ActivityId | null>('visitapapa26');
   const [selectedSubsection, setSelectedSubsection] = useState<SubsectionId | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newActivityName, setNewActivityName] = useState('');

@@ -1,15 +1,15 @@
 import type { ProfileType } from '@/types/profileConfig';
 
 export const KNOWN_TABS = [
-  'index', 'cancionero', 'contigo', 'calendario', 'fotos', 'comunica', 'mas',
+  'index', 'cancionero', 'contigo', 'calendario', 'fotos', 'comunica', 'mas', 'visitapapa',
 ] as const;
 
 export const KNOWN_HOME_BUTTONS = [
-  'comunica', 'cancionero', 'fotos', 'evangelio', 'mas',
+  'comunica', 'cancionero', 'fotos', 'evangelio', 'mas', 'visitapapa',
 ] as const;
 
 export const KNOWN_MAS_ITEMS = [
-  'comunica', 'comunica-gestion', 'jubileo',
+  'comunica', 'comunica-gestion', 'jubileo', 'eventos-pasados',
 ] as const;
 
 export const KNOWN_ALBUM_TAGS = [
@@ -30,6 +30,7 @@ export const TAB_LABELS: Record<string, string> = {
   fotos: 'Fotos',
   comunica: 'Comunica',
   mas: 'Más',
+  visitapapa: 'Visita Papa León XIV',
 };
 
 export const HOME_BUTTON_LABELS: Record<string, string> = {
@@ -38,12 +39,14 @@ export const HOME_BUTTON_LABELS: Record<string, string> = {
   fotos: 'Fotos',
   evangelio: 'Evangelio',
   mas: 'Más',
+  visitapapa: 'Visita Papa León XIV',
 };
 
 export const MAS_ITEM_LABELS: Record<string, string> = {
   comunica: 'Comunica',
   'comunica-gestion': 'Comunica (gestión)',
   jubileo: 'Jubileo',
+  'eventos-pasados': 'Eventos pasados',
 };
 
 export const ALBUM_TAG_LABELS: Record<string, string> = {
