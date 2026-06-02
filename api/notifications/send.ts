@@ -54,6 +54,10 @@ interface ExpoPushMessage {
   categoryId?: string;
   priority?: 'default' | 'normal' | 'high';
   sound?: string;
+  // Rich media: makes the image show in the OS notification itself (Expo SDK 52+).
+  richContent?: { image: string };
+  // Required on iOS so the Notification Service Extension can render the image.
+  mutableContent?: boolean;
 }
 
 interface ExpoPushTicket {
@@ -145,7 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       title: body.title,
       body: body.body,
       category: body.category || 'general',
-      priority: body.priority || 'normal',
+      priority: body.priority || 'default',
       icon: body.icon || null,
       imageUrl: body.imageUrl || null,
       internalRoute: body.internalRoute || null,
@@ -210,24 +214,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         seenTokens.add(t.token);
         return true;
       })
-      .map((t) => ({
-        _tokenKey: t.key,
-        to: t.token,
-        title: body.title,
-        body: body.body,
-        data: {
-          id: notificationId,
-          category: body.category || 'general',
-          priority: body.priority || 'normal',
-          internalRoute: body.internalRoute || null,
-          icon: body.icon || null,
-          imageUrl: body.imageUrl || null,
-          actionButtons: body.actionButtons || [],
-        },
-        categoryId: body.category || 'general',
-        priority: (body.priority || 'default') as 'default' | 'normal' | 'high',
-        sound: 'default',
-      }));
+      .map((t) => {
+        const msg: ExpoPushMessage & { _tokenKey: string } = {
+          _tokenKey: t.key,
+          to: t.token,
+          title: body.title,
+          body: body.body,
+          data: {
+            id: notificationId,
+            category: body.category || 'general',
+            priority: body.priority || 'default',
+            internalRoute: body.internalRoute || null,
+            icon: body.icon || null,
+            imageUrl: body.imageUrl || null,
+            actionButtons: body.actionButtons || [],
+          },
+          categoryId: body.category || 'general',
+          priority: (body.priority || 'default') as 'default' | 'normal' | 'high',
+          sound: 'default',
+        };
+        // Show the image in the OS notification (not just inside the app).
+        if (body.imageUrl) {
+          msg.richContent = { image: body.imageUrl };
+          msg.mutableContent = true;
+        }
+        return msg;
+      });
 
     await firebasePatch(`/notifications/${notificationId}`, {
       totalTokens: messages.length,

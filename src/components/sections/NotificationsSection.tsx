@@ -18,11 +18,17 @@ import { onValue, ref } from 'firebase/database';
 import {
   sendNotification,
   getStats,
+  getFilterOptions,
   type SendNotificationRequest,
   type NotificationRecord,
   type NotificationStats,
   type ActionButton,
+  type FilterOptions,
 } from '@/lib/notificationService';
+
+const ALL = '__all';
+const NONE = '__none';
+const CUSTOM_ROUTE = '__custom';
 
 const CATEGORIES = [
   { id: 'general', label: 'General' },
@@ -39,14 +45,19 @@ const PRIORITIES = [
   { id: 'high', label: 'Alta' },
 ];
 
+// NOTE: estas rutas deben coincidir EXACTAMENTE con las rutas de navegación
+// (Expo Router) de la MCM App. Si la app cambia su estructura, actualiza esta
+// lista. Usa "Personalizada" para enlazar a una pantalla concreta (deep link)
+// que no esté en los accesos rápidos, p. ej. una actividad nueva.
 const INTERNAL_ROUTES = [
-  { id: '', label: 'Ninguna' },
+  { id: NONE, label: 'Ninguna' },
   { id: '/(tabs)/cancionero', label: 'Cancionero' },
   { id: '/(tabs)/calendario', label: 'Calendario' },
   { id: '/(tabs)/actividades', label: 'Actividades' },
   { id: '/(tabs)/jubileo', label: 'Jubileo' },
   { id: '/(tabs)/wordle', label: 'Wordle' },
   { id: '/(tabs)/albums', label: 'Álbumes' },
+  { id: CUSTOM_ROUTE, label: 'Personalizada (deep link)…' },
 ];
 
 const MAX_TITLE = 50;
@@ -60,9 +71,10 @@ interface FormState {
   priority: 'default' | 'normal' | 'high';
   icon: string;
   imageUrl: string;
-  internalRoute: string;
+  routeChoice: string;   // dropdown value: a preset id, NONE, or CUSTOM_ROUTE
+  customRoute: string;   // free-text deep link when routeChoice === CUSTOM_ROUTE
   actionButtons: ActionButton[];
-  // Future filters
+  // Recipient filters (matched server-side against pushTokens.userType / .delegacion)
   recipientType: string;
   delegacion: string;
 }
@@ -74,11 +86,19 @@ const emptyForm: FormState = {
   priority: 'default',
   icon: '',
   imageUrl: '',
-  internalRoute: '',
+  routeChoice: NONE,
+  customRoute: '',
   actionButtons: [],
-  recipientType: '',
-  delegacion: '',
+  recipientType: ALL,
+  delegacion: ALL,
 };
+
+// Resolves the dropdown choice + custom field into the actual route string.
+function resolveRoute(form: FormState): string | undefined {
+  if (form.routeChoice === NONE) return undefined;
+  if (form.routeChoice === CUSTOM_ROUTE) return form.customRoute.trim() || undefined;
+  return form.routeChoice;
+}
 
 export function NotificationsSection() {
   const [form, setForm] = useState<FormState>({ ...emptyForm });
@@ -86,6 +106,7 @@ export function NotificationsSection() {
   const [stats, setStats] = useState<NotificationStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [history, setHistory] = useState<NotificationRecord[]>([]);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ userTypes: [], delegaciones: [] });
   const { toast } = useToast();
 
   // Load notification history from Firebase
@@ -122,6 +143,13 @@ export function NotificationsSection() {
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  // Load recipient filter options (distinct values present in pushTokens)
+  useEffect(() => {
+    getFilterOptions(getDB())
+      .then(setFilterOptions)
+      .catch(() => setFilterOptions({ userTypes: [], delegaciones: [] }));
+  }, []);
 
   const updateForm = (field: keyof FormState, value: string | ActionButton[]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -169,10 +197,10 @@ export function NotificationsSection() {
         priority: form.priority,
         icon: form.icon || undefined,
         imageUrl: form.imageUrl || undefined,
-        internalRoute: form.internalRoute || undefined,
+        internalRoute: resolveRoute(form),
         actionButtons: form.actionButtons.filter((b) => b.text && b.url),
-        recipientType: form.recipientType || undefined,
-        delegacion: form.delegacion || undefined,
+        recipientType: form.recipientType !== ALL ? form.recipientType : undefined,
+        delegacion: form.delegacion !== ALL ? form.delegacion : undefined,
       };
 
       const result = await sendNotification(payload);
@@ -450,18 +478,30 @@ export function NotificationsSection() {
                   {/* Internal route */}
                   <div className="space-y-2">
                     <Label>Ruta interna (navegación en la app)</Label>
-                    <Select value={form.internalRoute} onValueChange={(v) => updateForm('internalRoute', v)}>
+                    <Select value={form.routeChoice} onValueChange={(v) => updateForm('routeChoice', v)}>
                       <SelectTrigger className="bg-input border-border/50">
                         <SelectValue placeholder="Selecciona una ruta" />
                       </SelectTrigger>
                       <SelectContent>
                         {INTERNAL_ROUTES.map((route) => (
-                          <SelectItem key={route.id || '__none'} value={route.id || '__none'}>
+                          <SelectItem key={route.id} value={route.id}>
                             {route.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {form.routeChoice === CUSTOM_ROUTE && (
+                      <Input
+                        placeholder="Ej: /(tabs)/actividades/profundiza/mi-actividad"
+                        value={form.customRoute}
+                        onChange={(e) => updateForm('customRoute', e.target.value)}
+                        className="bg-input border-border/50 font-mono text-xs"
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Al tocar la notificación, la app abrirá esta pantalla. Debe coincidir con
+                      una ruta real de la MCM App.
+                    </p>
                   </div>
 
                   {/* Action Buttons */}
@@ -495,43 +535,64 @@ export function NotificationsSection() {
                       </div>
                     ))}
 
-                    {form.actionButtons.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Puedes añadir hasta {MAX_ACTION_BUTTONS} botones de acción
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {form.actionButtons.length === 0
+                        ? `Puedes añadir hasta ${MAX_ACTION_BUTTONS} botones de acción. `
+                        : ''}
+                      Se envían en <code className="bg-muted px-1 rounded">data.actionButtons</code>;
+                      la MCM App debe registrar las categorías de acción para mostrarlos en la
+                      notificación del sistema.
+                    </p>
                   </div>
 
-                  {/* Future: Recipient filters (prepared but disabled) */}
-                  <div className="p-4 bg-muted/10 rounded-lg border border-dashed border-border/30 space-y-3">
+                  {/* Recipient filters (segmentación por perfil / delegación) */}
+                  <div className="p-4 bg-muted/10 rounded-lg border border-border/30 space-y-3">
                     <p className="text-sm font-medium text-muted-foreground flex items-center">
                       <Users className="w-4 h-4 mr-2" />
-                      Filtros de destinatarios (próximamente)
+                      Filtros de destinatarios
                     </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-50 pointer-events-none">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>Tipo de destinatario</Label>
-                        <Select disabled>
+                        <Label>Tipo de perfil</Label>
+                        <Select value={form.recipientType} onValueChange={(v) => updateForm('recipientType', v)}>
                           <SelectTrigger className="bg-input border-border/50">
                             <SelectValue placeholder="Todos" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">Todos</SelectItem>
+                            <SelectItem value={ALL}>Todos</SelectItem>
+                            {filterOptions.userTypes.map((t) => (
+                              <SelectItem key={t} value={t}>{t}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
                         <Label>Delegación local</Label>
-                        <Select disabled>
+                        <Select value={form.delegacion} onValueChange={(v) => updateForm('delegacion', v)}>
                           <SelectTrigger className="bg-input border-border/50">
                             <SelectValue placeholder="Todas" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">Todas</SelectItem>
+                            <SelectItem value={ALL}>Todas</SelectItem>
+                            {filterOptions.delegaciones.map((d) => (
+                              <SelectItem key={d} value={d}>{d}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
+                    {filterOptions.userTypes.length === 0 && filterOptions.delegaciones.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Aún no hay perfiles ni delegaciones registrados en los tokens. La app debe
+                        guardar <code className="bg-muted px-1 rounded">userType</code> y{' '}
+                        <code className="bg-muted px-1 rounded">delegacion</code> en cada token de{' '}
+                        <code className="bg-muted px-1 rounded">/pushTokens</code> para poder segmentar.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Si dejas "Todos"/"Todas" la notificación llega a todos los dispositivos.
+                      </p>
+                    )}
                   </div>
 
                   {/* Send button */}
@@ -644,12 +705,22 @@ export function NotificationsSection() {
                       {form.priority}
                     </Badge>
                   </div>
-                  {form.internalRoute && form.internalRoute !== '__none' && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Ruta:</span>
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{form.internalRoute}</code>
+                  {resolveRoute(form) && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground flex-shrink-0">Ruta:</span>
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded truncate">{resolveRoute(form)}</code>
                     </div>
                   )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Destinatarios:</span>
+                    <span className="text-right">
+                      {form.recipientType !== ALL || form.delegacion !== ALL
+                        ? [form.recipientType !== ALL ? form.recipientType : null,
+                           form.delegacion !== ALL ? form.delegacion : null]
+                            .filter(Boolean).join(' · ')
+                        : 'Todos'}
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Botones:</span>
                     <span>{form.actionButtons.filter((b) => b.text && b.url).length}</span>
