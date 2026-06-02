@@ -5,6 +5,17 @@ const FIREBASE_DB_URL = process.env.VITE_FIREBASE_DATABASE_URL || process.env.FI
 const EXPO_PUSH_API = 'https://exp.host/--/api/v2/push/send';
 const CHUNK_SIZE = 100;
 
+// iOS notification categories actually registered in the MCM App. Only these
+// produce native action buttons; any other value is ignored by the app.
+const IOS_CATEGORIES = new Set(['general', 'eventos', 'fotos']);
+
+// Maps the business category (data.category) to a registered iOS categoryId.
+function resolveCategoryId(category: string): string {
+  if (IOS_CATEGORIES.has(category)) return category;
+  if (category === 'celebraciones') return 'eventos';
+  return 'general';
+}
+
 // ─── Firebase REST helpers ───────────────────────────────────────────────────
 
 async function firebaseGet<T = unknown>(path: string): Promise<T | null> {
@@ -42,8 +53,14 @@ interface PushTokenRecord {
   token: string;
   platform?: 'ios' | 'android' | 'web';
   lastActive?: string;
-  delegacion?: string;
-  userType?: string;
+  // Segmentation: the app stores a pre-computed union of profile + delegation topics.
+  topics?: string[];
+}
+
+interface ActionButton {
+  text: string;
+  url: string;
+  isInternal?: boolean;
 }
 
 interface ExpoPushMessage {
@@ -54,9 +71,9 @@ interface ExpoPushMessage {
   categoryId?: string;
   priority?: 'default' | 'normal' | 'high';
   sound?: string;
-  // Rich media: makes the image show in the OS notification itself (Expo SDK 52+).
+  // Rich media: shows the image in the OS notification on Android (iOS needs a
+  // Notification Service Extension, which the app does NOT have yet).
   richContent?: { image: string };
-  // Required on iOS so the Notification Service Extension can render the image.
   mutableContent?: boolean;
 }
 
@@ -75,9 +92,8 @@ interface SendNotificationBody {
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
-  actionButtons?: Array<{ text: string; url: string }>;
-  recipientType?: string;
-  delegacion?: string;
+  actionButton?: ActionButton;
+  topics?: string[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -142,20 +158,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const notificationId = crypto.randomUUID();
+    const category = body.category || 'general';
+    const topics = (body.topics || []).filter(Boolean);
+    const actionButton = body.actionButton && body.actionButton.text && body.actionButton.url
+      ? body.actionButton
+      : null;
 
     // Save notification record to Firebase
     const notificationRecord = {
       notificationId,
       title: body.title,
       body: body.body,
-      category: body.category || 'general',
+      category,
       priority: body.priority || 'default',
       icon: body.icon || null,
       imageUrl: body.imageUrl || null,
       internalRoute: body.internalRoute || null,
-      actionButtons: body.actionButtons || [],
-      recipientType: body.recipientType || null,
-      delegacion: body.delegacion || null,
+      actionButton,
+      topics,
       status: 'sending',
       createdAt: new Date().toISOString(),
       sentAt: null,
@@ -188,15 +208,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
-    // Filter tokens (future: by recipientType, delegacion)
+    // Filter by topics: a token matches only if its topics[] contains ALL the
+    // requested topics (AND). No topics requested = send to everyone.
     let tokenEntries = Object.entries(pushTokensRaw);
 
-    if (body.recipientType) {
-      tokenEntries = tokenEntries.filter(([, record]) => record.userType === body.recipientType);
-    }
-
-    if (body.delegacion) {
-      tokenEntries = tokenEntries.filter(([, record]) => record.delegacion === body.delegacion);
+    if (topics.length > 0) {
+      tokenEntries = tokenEntries.filter(([, record]) => {
+        const tokenTopics = Array.isArray(record?.topics) ? record.topics : [];
+        return topics.every((t) => tokenTopics.includes(t));
+      });
     }
 
     const tokens = tokenEntries.map(([key, record]) => ({
@@ -221,19 +241,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           title: body.title,
           body: body.body,
           data: {
-            id: notificationId,
-            category: body.category || 'general',
-            priority: body.priority || 'default',
+            id: notificationId, // critical: used by the app to dedupe / mark read
+            category,
             internalRoute: body.internalRoute || null,
             icon: body.icon || null,
             imageUrl: body.imageUrl || null,
-            actionButtons: body.actionButtons || [],
+            actionButton,
           },
-          categoryId: body.category || 'general',
+          categoryId: resolveCategoryId(category),
           priority: (body.priority || 'default') as 'default' | 'normal' | 'high',
           sound: 'default',
         };
-        // Show the image in the OS notification (not just inside the app).
+        // Image: rendered in the OS notification on Android; on iOS it only shows
+        // inside the app (via data.imageUrl) until an NSE is added.
         if (body.imageUrl) {
           msg.richContent = { image: body.imageUrl };
           msg.mutableContent = true;

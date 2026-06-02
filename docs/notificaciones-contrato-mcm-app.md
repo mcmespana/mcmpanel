@@ -1,5 +1,32 @@
 # Notificaciones push — contrato de datos MCM Panel ↔ MCM App
 
+> **Estado: ALINEADO** (2026-06-02). La MCM App devolvió el contrato real y el
+> Panel se ha ajustado a él. Este documento refleja ya el formato canónico.
+
+## Resumen del alineamiento aplicado en el Panel
+
+- **Rutas internas**: lista corregida a las reales (`/(tabs)/index`,
+  `/(tabs)/calendario`, `/(tabs)/fotos`, `/(tabs)/mas`, `/(tabs)/cancionero`,
+  `/(tabs)/contigo[...]`, `/(tabs)/visitapapa`, `/notifications`). Eliminadas las
+  inexistentes (`/(tabs)/actividades`, `/(tabs)/jubileo`, `/(tabs)/albums`,
+  `/(tabs)/wordle`). Las que dependen del perfil se marcan con ⚠️.
+- **Botón de acción**: ahora es **único** y se envía como `data.actionButton`
+  (objeto `{ text, url, isInternal }`), el formato canónico de la app.
+- **Segmentación**: por **`topics`** (perfil → familias/monitores/miembros,
+  delegación → `mcm-*`). El backend filtra `topics.includes(t)` con AND. Por
+  defecto (sin filtros) → **a todos** (envío masivo).
+- **Categoría de negocio** (`data.category`): vocabulario alineado
+  (general, eventos, cancionero, fotos, celebraciones, urgente, mantenimiento).
+  El `categoryId` (iOS) se mapea automáticamente a `general`/`eventos`/`fotos`.
+- **Imagen**: se envía `richContent.image` (Android) + siempre `data.imageUrl`
+  (lo que usa la app, único soportado en iOS hoy).
+- **`data.id`**: se mantiene (crítico para dedup en la app).
+- Eliminado `data.priority` (la app no lo usa; vale el `priority` top-level).
+
+---
+
+## Contrato original (referencia histórica)
+
 Este documento describe **qué envía exactamente el MCM Panel** al enviar una
 notificación, para que la **MCM App** procese cada campo de forma coherente.
 Sirve como base para el prompt de verificación que hay al final.

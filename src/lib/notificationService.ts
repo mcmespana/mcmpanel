@@ -7,6 +7,7 @@ const API_BASE = '/api/notifications';
 export interface ActionButton {
   text: string;
   url: string;
+  isInternal?: boolean; // true = la url es una ruta interna de la app (router)
 }
 
 export interface SendNotificationRequest {
@@ -17,9 +18,10 @@ export interface SendNotificationRequest {
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
-  actionButtons?: ActionButton[];
-  recipientType?: string;
-  delegacion?: string;
+  actionButton?: ActionButton;
+  // Segmentación por "topics" (la app guarda un array topics[] por token).
+  // Si se envían varios, el token debe contenerlos TODOS (AND). Vacío = a todos.
+  topics?: string[];
 }
 
 export interface SendNotificationResponse {
@@ -55,9 +57,8 @@ export interface NotificationRecord {
   icon: string | null;
   imageUrl: string | null;
   internalRoute: string | null;
-  actionButtons: ActionButton[];
-  recipientType: string | null;
-  delegacion: string | null;
+  actionButton: ActionButton | null;
+  topics: string[];
   status: string;
   createdAt: string;
   sentAt: string | null;
@@ -90,37 +91,6 @@ interface PushTokenRecord {
   token: string;
   platform?: 'ios' | 'android' | 'web';
   lastActive?: string;
-  userType?: string;
-  delegacion?: string;
-}
-
-export interface FilterOptions {
-  userTypes: string[];
-  delegaciones: string[];
-}
-
-// Reads the distinct userType / delegacion values present in the registered
-// push tokens, so the recipient filters only ever offer values that can match.
-export async function getFilterOptions(db: Database): Promise<FilterOptions> {
-  const snap = await get(ref(db, '/pushTokens'));
-  const val = snap.val() as Record<string, PushTokenRecord> | null;
-
-  const userTypes = new Set<string>();
-  const delegaciones = new Set<string>();
-
-  if (val && typeof val === 'object') {
-    for (const record of Object.values(val)) {
-      if (record && typeof record === 'object') {
-        if (record.userType) userTypes.add(record.userType);
-        if (record.delegacion) delegaciones.add(record.delegacion);
-      }
-    }
-  }
-
-  return {
-    userTypes: [...userTypes].sort(),
-    delegaciones: [...delegaciones].sort(),
-  };
 }
 
 export async function getStats(db: Database): Promise<NotificationStats> {

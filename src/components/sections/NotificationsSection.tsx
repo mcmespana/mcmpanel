@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Send, Bell, Users, Target, Smartphone, Clock,
-  CheckCircle, Plus, Trash2, BarChart3, AlertTriangle,
-  Monitor, Apple, Loader2, RefreshCw,
+  CheckCircle, Trash2, BarChart3, AlertTriangle,
+  Monitor, Apple, Loader2, RefreshCw, Megaphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
@@ -18,25 +19,25 @@ import { onValue, ref } from 'firebase/database';
 import {
   sendNotification,
   getStats,
-  getFilterOptions,
   type SendNotificationRequest,
   type NotificationRecord,
   type NotificationStats,
   type ActionButton,
-  type FilterOptions,
 } from '@/lib/notificationService';
 
 const ALL = '__all';
 const NONE = '__none';
 const CUSTOM_ROUTE = '__custom';
 
+// Vocabulario alineado con la MCM App (types/notifications.ts).
 const CATEGORIES = [
   { id: 'general', label: 'General' },
-  { id: 'evento', label: 'Evento' },
-  { id: 'actividad', label: 'Actividad' },
-  { id: 'cantoral', label: 'Cantoral' },
-  { id: 'jubileo', label: 'Jubileo' },
+  { id: 'eventos', label: 'Eventos' },
+  { id: 'cancionero', label: 'Cancionero' },
+  { id: 'fotos', label: 'Fotos' },
+  { id: 'celebraciones', label: 'Celebraciones' },
   { id: 'urgente', label: 'Urgente' },
+  { id: 'mantenimiento', label: 'Mantenimiento' },
 ];
 
 const PRIORITIES = [
@@ -45,24 +46,55 @@ const PRIORITIES = [
   { id: 'high', label: 'Alta' },
 ];
 
-// NOTE: estas rutas deben coincidir EXACTAMENTE con las rutas de navegación
-// (Expo Router) de la MCM App. Si la app cambia su estructura, actualiza esta
-// lista. Usa "Personalizada" para enlazar a una pantalla concreta (deep link)
-// que no esté en los accesos rápidos, p. ej. una actividad nueva.
+// Rutas REALES de la MCM App (Expo Router). Las marcadas con ⚠️ dependen del
+// perfil del usuario: si su perfil no tiene esa tab, la navegación puede no ir
+// a ningún sitio. Para envíos universales usa Inicio, Calendario, Fotos o Más.
 const INTERNAL_ROUTES = [
   { id: NONE, label: 'Ninguna' },
-  { id: '/(tabs)/cancionero', label: 'Cancionero' },
+  { id: '/(tabs)/index', label: 'Inicio' },
   { id: '/(tabs)/calendario', label: 'Calendario' },
-  { id: '/(tabs)/actividades', label: 'Actividades' },
-  { id: '/(tabs)/jubileo', label: 'Jubileo' },
-  { id: '/(tabs)/wordle', label: 'Wordle' },
-  { id: '/(tabs)/albums', label: 'Álbumes' },
+  { id: '/(tabs)/fotos', label: 'Fotos / Álbumes' },
+  { id: '/(tabs)/mas', label: 'Más (eventos: Jubileo, Visita Papa…)' },
+  { id: '/(tabs)/cancionero', label: 'Cancionero ⚠️ (según perfil)' },
+  { id: '/(tabs)/contigo', label: 'Contigo ⚠️ (según perfil)' },
+  { id: '/(tabs)/contigo/evangelio', label: 'Contigo · Evangelio del día ⚠️' },
+  { id: '/(tabs)/contigo/oracion', label: 'Contigo · Oración ⚠️' },
+  { id: '/(tabs)/contigo/revision', label: 'Contigo · Revisión ⚠️' },
+  { id: '/(tabs)/contigo/bookmarks', label: 'Contigo · Favoritos ⚠️' },
+  { id: '/(tabs)/visitapapa', label: 'Visita del Papa ⚠️ (si activo)' },
+  { id: '/notifications', label: 'Centro de notificaciones' },
   { id: CUSTOM_ROUTE, label: 'Personalizada (deep link)…' },
+];
+
+// Segmentación por "topics". Un perfil aporta familias/monitores/miembros y la
+// delegación aporta su topic mcm-*. Filtrar por ambos = AND (familias de Madrid).
+const PROFILE_TOPICS = [
+  { topic: 'familias', label: 'Familias' },
+  { topic: 'monitores', label: 'Monitores' },
+  { topic: 'miembros', label: 'Miembros' },
+];
+
+const DELEGATION_TOPICS = [
+  { topic: 'mcm-espana', label: 'MCM España' },
+  { topic: 'mcm-benicarlo-vinaros', label: 'Benicarló-Vinaròs' },
+  { topic: 'mcm-burriana', label: 'Burriana' },
+  { topic: 'mcm-caravaca', label: 'Caravaca' },
+  { topic: 'mcm-castellon', label: 'Castellón' },
+  { topic: 'mcm-espinardo', label: 'Espinardo' },
+  { topic: 'mcm-granada', label: 'Granada' },
+  { topic: 'mcm-lalcora', label: "L'Alcora" },
+  { topic: 'mcm-madrid', label: 'Madrid' },
+  { topic: 'mcm-nules', label: 'Nules' },
+  { topic: 'mcm-onda', label: 'Onda' },
+  { topic: 'mcm-quintanar', label: 'Quintanar' },
+  { topic: 'mcm-vila-real', label: 'Vila-real' },
+  { topic: 'mcm-villacanas', label: 'Villacañas' },
+  { topic: 'mcm-zaragoza', label: 'Zaragoza' },
+  { topic: 'internacional', label: 'Internacional' },
 ];
 
 const MAX_TITLE = 50;
 const MAX_BODY = 200;
-const MAX_ACTION_BUTTONS = 3;
 
 interface FormState {
   title: string;
@@ -71,12 +103,15 @@ interface FormState {
   priority: 'default' | 'normal' | 'high';
   icon: string;
   imageUrl: string;
-  routeChoice: string;   // dropdown value: a preset id, NONE, or CUSTOM_ROUTE
+  routeChoice: string;   // dropdown: preset id, NONE, or CUSTOM_ROUTE
   customRoute: string;   // free-text deep link when routeChoice === CUSTOM_ROUTE
-  actionButtons: ActionButton[];
-  // Recipient filters (matched server-side against pushTokens.userType / .delegacion)
-  recipientType: string;
-  delegacion: string;
+  // Single action button (canonical format expected by the app)
+  buttonText: string;
+  buttonUrl: string;
+  buttonIsInternal: boolean;
+  // Segmentation by topic (AND). ALL = no filter on that axis.
+  profileTopic: string;
+  delegationTopic: string;
 }
 
 const emptyForm: FormState = {
@@ -88,16 +123,33 @@ const emptyForm: FormState = {
   imageUrl: '',
   routeChoice: NONE,
   customRoute: '',
-  actionButtons: [],
-  recipientType: ALL,
-  delegacion: ALL,
+  buttonText: '',
+  buttonUrl: '',
+  buttonIsInternal: false,
+  profileTopic: ALL,
+  delegationTopic: ALL,
 };
 
-// Resolves the dropdown choice + custom field into the actual route string.
 function resolveRoute(form: FormState): string | undefined {
   if (form.routeChoice === NONE) return undefined;
   if (form.routeChoice === CUSTOM_ROUTE) return form.customRoute.trim() || undefined;
   return form.routeChoice;
+}
+
+function resolveTopics(form: FormState): string[] {
+  const topics: string[] = [];
+  if (form.profileTopic !== ALL) topics.push(form.profileTopic);
+  if (form.delegationTopic !== ALL) topics.push(form.delegationTopic);
+  return topics;
+}
+
+function resolveActionButton(form: FormState): ActionButton | undefined {
+  if (!form.buttonText.trim() || !form.buttonUrl.trim()) return undefined;
+  return {
+    text: form.buttonText.trim(),
+    url: form.buttonUrl.trim(),
+    isInternal: form.buttonIsInternal,
+  };
 }
 
 export function NotificationsSection() {
@@ -106,7 +158,6 @@ export function NotificationsSection() {
   const [stats, setStats] = useState<NotificationStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [history, setHistory] = useState<NotificationRecord[]>([]);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ userTypes: [], delegaciones: [] });
   const { toast } = useToast();
 
   // Load notification history from Firebase
@@ -144,39 +195,11 @@ export function NotificationsSection() {
     loadStats();
   }, [loadStats]);
 
-  // Load recipient filter options (distinct values present in pushTokens)
-  useEffect(() => {
-    getFilterOptions(getDB())
-      .then(setFilterOptions)
-      .catch(() => setFilterOptions({ userTypes: [], delegaciones: [] }));
-  }, []);
-
-  const updateForm = (field: keyof FormState, value: string | ActionButton[]) => {
+  const updateForm = (field: keyof FormState, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const addActionButton = () => {
-    if (form.actionButtons.length >= MAX_ACTION_BUTTONS) return;
-    setForm((prev) => ({
-      ...prev,
-      actionButtons: [...prev.actionButtons, { text: '', url: '' }],
-    }));
-  };
-
-  const updateActionButton = (index: number, field: 'text' | 'url', value: string) => {
-    setForm((prev) => {
-      const updated = [...prev.actionButtons];
-      updated[index] = { ...updated[index], [field]: value };
-      return { ...prev, actionButtons: updated };
-    });
-  };
-
-  const removeActionButton = (index: number) => {
-    setForm((prev) => ({
-      ...prev,
-      actionButtons: prev.actionButtons.filter((_, i) => i !== index),
-    }));
-  };
+  const segmented = form.profileTopic !== ALL || form.delegationTopic !== ALL;
 
   const handleSend = async () => {
     if (!form.title.trim()) {
@@ -198,9 +221,8 @@ export function NotificationsSection() {
         icon: form.icon || undefined,
         imageUrl: form.imageUrl || undefined,
         internalRoute: resolveRoute(form),
-        actionButtons: form.actionButtons.filter((b) => b.text && b.url),
-        recipientType: form.recipientType !== ALL ? form.recipientType : undefined,
-        delegacion: form.delegacion !== ALL ? form.delegacion : undefined,
+        actionButton: resolveActionButton(form),
+        topics: segmented ? resolveTopics(form) : undefined,
       };
 
       const result = await sendNotification(payload);
@@ -242,7 +264,7 @@ export function NotificationsSection() {
         </div>
       </div>
 
-      <Tabs defaultValue="dashboard" className="space-y-6">
+      <Tabs defaultValue="compose" className="space-y-6">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="compose">Crear Notificación</TabsTrigger>
@@ -461,6 +483,7 @@ export function NotificationsSection() {
                         onChange={(e) => updateForm('icon', e.target.value)}
                         className="bg-input border-border/50"
                       />
+                      <p className="text-xs text-muted-foreground">Miniatura en el centro de notificaciones de la app.</p>
                     </div>
 
                     <div className="space-y-2">
@@ -472,12 +495,15 @@ export function NotificationsSection() {
                         onChange={(e) => updateForm('imageUrl', e.target.value)}
                         className="bg-input border-border/50"
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Se ve en la notificación en Android. En iOS solo dentro de la app.
+                      </p>
                     </div>
                   </div>
 
                   {/* Internal route */}
                   <div className="space-y-2">
-                    <Label>Ruta interna (navegación en la app)</Label>
+                    <Label>Ruta interna (al tocar la notificación)</Label>
                     <Select value={form.routeChoice} onValueChange={(v) => updateForm('routeChoice', v)}>
                       <SelectTrigger className="bg-input border-border/50">
                         <SelectValue placeholder="Selecciona una ruta" />
@@ -492,107 +518,88 @@ export function NotificationsSection() {
                     </Select>
                     {form.routeChoice === CUSTOM_ROUTE && (
                       <Input
-                        placeholder="Ej: /(tabs)/actividades/profundiza/mi-actividad"
+                        placeholder="Ej: /(tabs)/mas"
                         value={form.customRoute}
                         onChange={(e) => updateForm('customRoute', e.target.value)}
                         className="bg-input border-border/50 font-mono text-xs"
                       />
                     )}
                     <p className="text-xs text-muted-foreground">
-                      Al tocar la notificación, la app abrirá esta pantalla. Debe coincidir con
-                      una ruta real de la MCM App.
+                      ⚠️ = la pantalla depende del perfil del usuario. Para todos, usa Inicio,
+                      Calendario, Fotos o Más.
                     </p>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label>Botones de acción</Label>
-                      {form.actionButtons.length < MAX_ACTION_BUTTONS && (
-                        <Button variant="outline" size="sm" onClick={addActionButton}>
-                          <Plus className="w-3 h-3 mr-1" /> Añadir botón
-                        </Button>
-                      )}
+                  {/* Action button (single, canonical) */}
+                  <div className="space-y-3 p-4 bg-muted/10 rounded-lg border border-border/30">
+                    <Label className="text-sm font-medium">Botón de acción (opcional)</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <Input
+                        placeholder="Texto del botón"
+                        value={form.buttonText}
+                        onChange={(e) => updateForm('buttonText', e.target.value)}
+                        className="bg-input border-border/50"
+                      />
+                      <Input
+                        placeholder={form.buttonIsInternal ? '/(tabs)/fotos' : 'https://…'}
+                        value={form.buttonUrl}
+                        onChange={(e) => updateForm('buttonUrl', e.target.value)}
+                        className="bg-input border-border/50"
+                      />
                     </div>
-
-                    {form.actionButtons.map((btn, i) => (
-                      <div key={i} className="flex items-center gap-2 p-3 bg-muted/20 rounded-lg border border-border/30">
-                        <Input
-                          placeholder="Texto del botón"
-                          value={btn.text}
-                          onChange={(e) => updateActionButton(i, 'text', e.target.value)}
-                          className="bg-input border-border/50 flex-1"
-                        />
-                        <Input
-                          placeholder="URL de destino"
-                          value={btn.url}
-                          onChange={(e) => updateActionButton(i, 'url', e.target.value)}
-                          className="bg-input border-border/50 flex-1"
-                        />
-                        <Button variant="ghost" size="icon" onClick={() => removeActionButton(i)}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </div>
-                    ))}
-
-                    <p className="text-xs text-muted-foreground">
-                      {form.actionButtons.length === 0
-                        ? `Puedes añadir hasta ${MAX_ACTION_BUTTONS} botones de acción. `
-                        : ''}
-                      Se envían en <code className="bg-muted px-1 rounded">data.actionButtons</code>;
-                      la MCM App debe registrar las categorías de acción para mostrarlos en la
-                      notificación del sistema.
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="btn-internal" className="text-xs text-muted-foreground font-normal">
+                        La URL es una ruta interna de la app (no un enlace web)
+                      </Label>
+                      <Switch
+                        id="btn-internal"
+                        checked={form.buttonIsInternal}
+                        onCheckedChange={(v) => updateForm('buttonIsInternal', v)}
+                      />
+                    </div>
                   </div>
 
-                  {/* Recipient filters (segmentación por perfil / delegación) */}
+                  {/* Recipient segmentation by topic */}
                   <div className="p-4 bg-muted/10 rounded-lg border border-border/30 space-y-3">
                     <p className="text-sm font-medium text-muted-foreground flex items-center">
                       <Users className="w-4 h-4 mr-2" />
-                      Filtros de destinatarios
+                      Segmentación (opcional)
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Tipo de perfil</Label>
-                        <Select value={form.recipientType} onValueChange={(v) => updateForm('recipientType', v)}>
+                        <Select value={form.profileTopic} onValueChange={(v) => updateForm('profileTopic', v)}>
                           <SelectTrigger className="bg-input border-border/50">
                             <SelectValue placeholder="Todos" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={ALL}>Todos</SelectItem>
-                            {filterOptions.userTypes.map((t) => (
-                              <SelectItem key={t} value={t}>{t}</SelectItem>
+                            <SelectItem value={ALL}>Todos los perfiles</SelectItem>
+                            {PROFILE_TOPICS.map((p) => (
+                              <SelectItem key={p.topic} value={p.topic}>{p.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
                         <Label>Delegación local</Label>
-                        <Select value={form.delegacion} onValueChange={(v) => updateForm('delegacion', v)}>
+                        <Select value={form.delegationTopic} onValueChange={(v) => updateForm('delegationTopic', v)}>
                           <SelectTrigger className="bg-input border-border/50">
                             <SelectValue placeholder="Todas" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={ALL}>Todas</SelectItem>
-                            {filterOptions.delegaciones.map((d) => (
-                              <SelectItem key={d} value={d}>{d}</SelectItem>
+                            <SelectItem value={ALL}>Todas las delegaciones</SelectItem>
+                            {DELEGATION_TOPICS.map((d) => (
+                              <SelectItem key={d.topic} value={d.topic}>{d.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
-                    {filterOptions.userTypes.length === 0 && filterOptions.delegaciones.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        Aún no hay perfiles ni delegaciones registrados en los tokens. La app debe
-                        guardar <code className="bg-muted px-1 rounded">userType</code> y{' '}
-                        <code className="bg-muted px-1 rounded">delegacion</code> en cada token de{' '}
-                        <code className="bg-muted px-1 rounded">/pushTokens</code> para poder segmentar.
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Si dejas "Todos"/"Todas" la notificación llega a todos los dispositivos.
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {segmented
+                        ? 'Solo recibirán los dispositivos que cumplan TODOS los filtros seleccionados (los que tengan los topics en su perfil).'
+                        : 'Sin filtros: la notificación llega a TODOS los dispositivos.'}
+                    </p>
                   </div>
 
                   {/* Send button */}
@@ -610,7 +617,7 @@ export function NotificationsSection() {
                     ) : (
                       <>
                         <Send className="w-4 h-4 mr-2" />
-                        Enviar Notificación
+                        {segmented ? 'Enviar a segmento' : 'Enviar a todos'}
                       </>
                     )}
                   </Button>
@@ -667,15 +674,11 @@ export function NotificationsSection() {
                               />
                             </div>
                           )}
-                          {form.actionButtons.filter((b) => b.text).length > 0 && (
+                          {form.buttonText.trim() && (
                             <div className="mt-2 flex flex-wrap gap-1">
-                              {form.actionButtons
-                                .filter((b) => b.text)
-                                .map((btn, i) => (
-                                  <span key={i} className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded">
-                                    {btn.text}
-                                  </span>
-                                ))}
+                              <span className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded">
+                                {form.buttonText}
+                              </span>
                             </div>
                           )}
                           <div className="text-gray-400 text-xs mt-2">ahora</div>
@@ -711,19 +714,21 @@ export function NotificationsSection() {
                       <code className="text-xs bg-muted px-1.5 py-0.5 rounded truncate">{resolveRoute(form)}</code>
                     </div>
                   )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Destinatarios:</span>
-                    <span className="text-right">
-                      {form.recipientType !== ALL || form.delegacion !== ALL
-                        ? [form.recipientType !== ALL ? form.recipientType : null,
-                           form.delegacion !== ALL ? form.delegacion : null]
-                            .filter(Boolean).join(' · ')
-                        : 'Todos'}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground flex-shrink-0">Destinatarios:</span>
+                    <span className="text-right flex items-center gap-1">
+                      {segmented ? (
+                        resolveTopics(form).map((t) => (
+                          <code key={t} className="text-[10px] bg-muted px-1 py-0.5 rounded">{t}</code>
+                        ))
+                      ) : (
+                        <span className="flex items-center gap-1"><Megaphone className="w-3 h-3" /> Todos</span>
+                      )}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Botones:</span>
-                    <span>{form.actionButtons.filter((b) => b.text && b.url).length}</span>
+                    <span className="text-muted-foreground">Botón:</span>
+                    <span>{resolveActionButton(form) ? 'Sí' : 'No'}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -763,6 +768,11 @@ export function NotificationsSection() {
                         </div>
                         <div className="flex flex-wrap gap-2 mt-2 text-xs text-muted-foreground">
                           <Badge variant="outline" className="text-[10px]">{notif.category}</Badge>
+                          {notif.topics && notif.topics.length > 0 && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {notif.topics.join(' · ')}
+                            </Badge>
+                          )}
                           {notif.sentAt && (
                             <span>
                               {new Date(notif.sentAt).toLocaleString('es-ES', {
