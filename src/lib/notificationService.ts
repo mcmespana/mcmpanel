@@ -7,6 +7,7 @@ const API_BASE = '/api/notifications';
 export interface ActionButton {
   text: string;
   url: string;
+  isInternal?: boolean; // true = la url es una ruta interna de la app (router)
 }
 
 export interface SendNotificationRequest {
@@ -17,9 +18,10 @@ export interface SendNotificationRequest {
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
-  actionButtons?: ActionButton[];
-  recipientType?: string;
-  delegacion?: string;
+  actionButton?: ActionButton;
+  // Segmentación por "topics" (la app guarda un array topics[] por token).
+  // Si se envían varios, el token debe contenerlos TODOS (AND). Vacío = a todos.
+  topics?: string[];
 }
 
 export interface SendNotificationResponse {
@@ -55,9 +57,8 @@ export interface NotificationRecord {
   icon: string | null;
   imageUrl: string | null;
   internalRoute: string | null;
-  actionButtons: ActionButton[];
-  recipientType: string | null;
-  delegacion: string | null;
+  actionButton: ActionButton | null;
+  topics: string[];
   status: string;
   createdAt: string;
   sentAt: string | null;
