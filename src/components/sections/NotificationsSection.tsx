@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Send, Bell, Users, Target, Smartphone, Clock,
-  CheckCircle, BarChart3, AlertTriangle,
+  CheckCircle, Trash2, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw, Megaphone,
   CalendarClock, XCircle, Ban,
 } from 'lucide-react';
