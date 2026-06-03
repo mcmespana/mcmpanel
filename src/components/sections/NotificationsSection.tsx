@@ -596,13 +596,22 @@ export function NotificationsSection() {
                   {/* Icon + Image URL */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="icon">URL del icono</Label>
+                      <Label>Icono de notificación</Label>
+                      <ImageUploadCropper
+                        value={form.icon}
+                        onChange={(url) => updateForm('icon', url)}
+                        storagePath="notificaciones/iconos"
+                        aspectRatio={1}
+                        maxWidth={256}
+                        maxHeight={256}
+                        quality={0.9}
+                      />
                       <Input
                         id="icon"
-                        placeholder="https://example.com/icon.png"
+                        placeholder="O pega una URL directamente…"
                         value={form.icon}
                         onChange={(e) => updateForm('icon', e.target.value)}
-                        className="bg-input border-border/50"
+                        className="bg-input border-border/50 text-xs"
                       />
                       <p className="text-xs text-muted-foreground">Miniatura en el centro de notificaciones de la app.</p>
                     </div>
