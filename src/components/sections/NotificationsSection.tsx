@@ -3,6 +3,7 @@ import {
   Send, Bell, Users, Target, Smartphone, Clock,
   CheckCircle, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw, Megaphone,
+  CalendarClock, XCircle, Ban,
 } from 'lucide-react';
 import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 import { Button } from '@/components/ui/button';
@@ -19,10 +20,13 @@ import { getDB } from '@/lib/firebase';
 import { onValue, ref } from 'firebase/database';
 import {
   sendNotification,
+  scheduleNotification,
+  cancelScheduledNotification,
   getStats,
   type SendNotificationRequest,
   type NotificationRecord,
   type NotificationStats,
+  type ScheduledNotification,
   type ActionButton,
 } from '@/lib/notificationService';
 
@@ -153,12 +157,53 @@ function resolveActionButton(form: FormState): ActionButton | undefined {
   };
 }
 
+// <input type="datetime-local"> gives a value WITHOUT timezone (e.g.
+// "2026-06-03T18:30"), interpreted in the admin's local time. `new Date(value)`
+// parses it in local time, so .toISOString() yields the correct UTC instant.
+function localInputToISO(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+// Builds a local "YYYY-MM-DDTHH:mm" string (what datetime-local expects).
+// toISOString would shift to UTC, so format the local parts by hand.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Default suggested value for the picker: now + 1 hour, on the minute.
+function defaultScheduleValue(): string {
+  const d = new Date(Date.now() + 60 * 60 * 1000);
+  d.setSeconds(0, 0);
+  return toLocalInputValue(d);
+}
+
+// Earliest selectable value: right now (so a send 5 minutes out is allowed).
+function minScheduleValue(): string {
+  return toLocalInputValue(new Date());
+}
+
+const SCHEDULE_STATUS: Record<ScheduledNotification['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  scheduled: { label: 'Programada', variant: 'secondary' },
+  processing: { label: 'Enviando', variant: 'default' },
+  sent: { label: 'Enviada', variant: 'default' },
+  cancelled: { label: 'Cancelada', variant: 'outline' },
+  failed: { label: 'Fallida', variant: 'destructive' },
+};
+
 export function NotificationsSection() {
   const [form, setForm] = useState<FormState>({ ...emptyForm });
   const [sending, setSending] = useState(false);
   const [stats, setStats] = useState<NotificationStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [history, setHistory] = useState<NotificationRecord[]>([]);
+  // Scheduling
+  const [scheduleMode, setScheduleMode] = useState(false);
+  const [scheduledFor, setScheduledFor] = useState('');
+  const [scheduled, setScheduled] = useState<ScheduledNotification[]>([]);
   const { toast } = useToast();
 
   // Load notification history from Firebase
@@ -173,6 +218,23 @@ export function NotificationsSection() {
         setHistory(records);
       } else {
         setHistory([]);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Load the scheduled-notifications queue (real-time)
+  useEffect(() => {
+    const db = getDB();
+    const schedRef = ref(db, '/scheduledNotifications');
+    const unsub = onValue(schedRef, (snap) => {
+      const val = snap.val();
+      if (val && typeof val === 'object') {
+        const records = Object.values(val) as ScheduledNotification[];
+        records.sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+        setScheduled(records);
+      } else {
+        setScheduled([]);
       }
     });
     return () => unsub();
@@ -212,20 +274,55 @@ export function NotificationsSection() {
       return;
     }
 
+    const payload: SendNotificationRequest = {
+      title: form.title.trim(),
+      body: form.body.trim(),
+      category: form.category,
+      priority: form.priority,
+      icon: form.icon || undefined,
+      imageUrl: form.imageUrl || undefined,
+      internalRoute: resolveRoute(form),
+      actionButton: resolveActionButton(form),
+      topics: segmented ? resolveTopics(form) : undefined,
+    };
+
+    // ─── Scheduled send ───────────────────────────────────────────────
+    if (scheduleMode) {
+      const iso = localInputToISO(scheduledFor);
+      if (!iso) {
+        toast({ title: 'Fecha inválida', description: 'Selecciona una fecha y hora válidas', variant: 'destructive' });
+        return;
+      }
+      if (new Date(iso).getTime() < Date.now() + 30_000) {
+        toast({ title: 'Fecha en el pasado', description: 'Programa la notificación al menos un minuto en el futuro', variant: 'destructive' });
+        return;
+      }
+
+      setSending(true);
+      try {
+        const result = await scheduleNotification({ ...payload, scheduledFor: iso });
+        const when = new Date(result.scheduledFor).toLocaleString('es-ES', {
+          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
+        toast({ title: 'Notificación programada', description: `Se enviará el ${when}.` });
+        setForm({ ...emptyForm });
+        setScheduleMode(false);
+        setScheduledFor('');
+      } catch (error) {
+        toast({
+          title: 'Error al programar',
+          description: error instanceof Error ? error.message : 'Error desconocido',
+          variant: 'destructive',
+        });
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // ─── Immediate send ───────────────────────────────────────────────
     setSending(true);
     try {
-      const payload: SendNotificationRequest = {
-        title: form.title.trim(),
-        body: form.body.trim(),
-        category: form.category,
-        priority: form.priority,
-        icon: form.icon || undefined,
-        imageUrl: form.imageUrl || undefined,
-        internalRoute: resolveRoute(form),
-        actionButton: resolveActionButton(form),
-        topics: segmented ? resolveTopics(form) : undefined,
-      };
-
       const result = await sendNotification(payload);
 
       toast({
@@ -248,6 +345,21 @@ export function NotificationsSection() {
     }
   };
 
+  const handleCancelScheduled = async (id: string) => {
+    try {
+      await cancelScheduledNotification(id);
+      toast({ title: 'Programación cancelada', description: 'La notificación no se enviará.' });
+    } catch (error) {
+      toast({
+        title: 'No se pudo cancelar',
+        description: error instanceof Error ? error.message : 'Error desconocido',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const pendingCount = scheduled.filter((s) => s.status === 'scheduled').length;
+
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -266,9 +378,17 @@ export function NotificationsSection() {
       </div>
 
       <Tabs defaultValue="compose" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="compose">Crear Notificación</TabsTrigger>
+          <TabsTrigger value="scheduled" className="relative">
+            Programadas
+            {pendingCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                {pendingCount}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="history">Historial</TabsTrigger>
         </TabsList>
 
@@ -612,17 +732,55 @@ export function NotificationsSection() {
                     </p>
                   </div>
 
+                  {/* Scheduling */}
+                  <div className="p-4 bg-muted/10 rounded-lg border border-border/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="schedule-mode" className="text-sm font-medium flex items-center">
+                        <CalendarClock className="w-4 h-4 mr-2" />
+                        Programar envío
+                      </Label>
+                      <Switch
+                        id="schedule-mode"
+                        checked={scheduleMode}
+                        onCheckedChange={(v) => {
+                          setScheduleMode(v);
+                          if (v && !scheduledFor) setScheduledFor(defaultScheduleValue());
+                        }}
+                      />
+                    </div>
+                    {scheduleMode && (
+                      <div className="space-y-2">
+                        <Input
+                          type="datetime-local"
+                          value={scheduledFor}
+                          min={minScheduleValue()}
+                          onChange={(e) => setScheduledFor(e.target.value)}
+                          className="bg-input border-border/50"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Se enviará automáticamente a la fecha y hora indicadas (tu hora local).
+                          Puedes verla y cancelarla en la pestaña «Programadas».
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Send button */}
                   <Button
                     onClick={handleSend}
                     className="w-full tech-glow relative overflow-hidden group"
                     size="lg"
-                    disabled={sending || !form.title.trim() || !form.body.trim()}
+                    disabled={sending || !form.title.trim() || !form.body.trim() || (scheduleMode && !scheduledFor)}
                   >
                     {sending ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Enviando...
+                        {scheduleMode ? 'Programando...' : 'Enviando...'}
+                      </>
+                    ) : scheduleMode ? (
+                      <>
+                        <CalendarClock className="w-4 h-4 mr-2" />
+                        {segmented ? 'Programar para segmento' : 'Programar para todos'}
                       </>
                     ) : (
                       <>
@@ -744,6 +902,102 @@ export function NotificationsSection() {
               </Card>
             </div>
           </div>
+        </TabsContent>
+
+        {/* ─── Scheduled Tab ───────────────────────────────────────────── */}
+        <TabsContent value="scheduled" className="space-y-4">
+          <Card className="bg-card/50 backdrop-blur-sm border-border/50">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <CalendarClock className="w-5 h-5 mr-2 text-primary" />
+                Notificaciones programadas
+              </CardTitle>
+              <CardDescription>
+                Se envían automáticamente a su hora. Puedes cancelar las pendientes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {scheduled.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CalendarClock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p>No hay notificaciones programadas</p>
+                  <p className="text-sm mt-1">
+                    Crea una notificación y activa «Programar envío».
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {scheduled.map((item) => {
+                    const meta = SCHEDULE_STATUS[item.status] ?? { label: item.status, variant: 'outline' as const };
+                    const when = new Date(item.scheduledFor).toLocaleString('es-ES', {
+                      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                    });
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-start justify-between p-4 bg-muted/20 rounded-lg border border-border/30"
+                      >
+                        <div className="flex-1 min-w-0 mr-4">
+                          <div className="font-medium truncate">{item.title}</div>
+                          <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                            {item.body}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
+                            <Badge variant="outline" className="text-[10px]">{item.category}</Badge>
+                            {item.topics && item.topics.length > 0 ? (
+                              <Badge variant="outline" className="text-[10px]">
+                                {item.topics.join(' · ')}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] flex items-center gap-1">
+                                <Megaphone className="w-3 h-3" /> Todos
+                              </Badge>
+                            )}
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {when}
+                            </span>
+                            {item.status === 'failed' && item.error && (
+                              <span className="text-destructive truncate max-w-[200px]" title={item.error}>
+                                {item.error}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                          <Badge variant={meta.variant} className="flex items-center">
+                            {item.status === 'processing' ? (
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            ) : item.status === 'sent' ? (
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                            ) : item.status === 'cancelled' ? (
+                              <Ban className="w-3 h-3 mr-1" />
+                            ) : item.status === 'failed' ? (
+                              <XCircle className="w-3 h-3 mr-1" />
+                            ) : (
+                              <CalendarClock className="w-3 h-3 mr-1" />
+                            )}
+                            {meta.label}
+                          </Badge>
+                          {item.status === 'scheduled' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-destructive hover:text-destructive"
+                              onClick={() => handleCancelScheduled(item.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 mr-1" />
+                              Cancelar
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ─── History Tab ─────────────────────────────────────────────── */}

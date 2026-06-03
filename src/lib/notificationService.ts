@@ -48,6 +48,31 @@ export interface NotificationStats {
   };
 }
 
+export interface ScheduleNotificationRequest extends SendNotificationRequest {
+  // ISO 8601 instant (UTC) at which the notification should be sent.
+  scheduledFor: string;
+  createdBy?: string;
+}
+
+export interface ScheduledNotification {
+  id: string;
+  title: string;
+  body: string;
+  category: string;
+  priority: 'default' | 'normal' | 'high';
+  icon?: string;
+  imageUrl?: string;
+  internalRoute?: string;
+  actionButton?: ActionButton | null;
+  topics?: string[];
+  scheduledFor: string;
+  status: 'scheduled' | 'processing' | 'sent' | 'cancelled' | 'failed';
+  createdAt: string;
+  createdBy: string | null;
+  sentNotificationId: string | null;
+  error: string | null;
+}
+
 export interface NotificationRecord {
   notificationId: string;
   title: string;
@@ -83,6 +108,49 @@ export async function sendNotification(data: SendNotificationRequest): Promise<S
   }
 
   return res.json();
+}
+
+// ─── Scheduled notifications ─────────────────────────────────────────────────
+
+// Stores a notification to be dispatched later by the Vercel Cron processor.
+export async function scheduleNotification(
+  data: ScheduleNotificationRequest,
+): Promise<{ id: string; status: string; scheduledFor: string }> {
+  const res = await fetch(`${API_BASE}/schedule`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error((err as { error: string }).error || `Server error: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+// Cancels a pending (status === 'scheduled') notification.
+export async function cancelScheduledNotification(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/schedule?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error((err as { error: string }).error || `Server error: ${res.status}`);
+  }
+}
+
+// Reads the scheduled-notifications queue directly from Firebase (same pattern
+// as getStats / the history listener), sorted by scheduled time ascending.
+export async function getScheduledNotifications(db: Database): Promise<ScheduledNotification[]> {
+  const snap = await get(ref(db, '/scheduledNotifications'));
+  const val = snap.val() as Record<string, ScheduledNotification> | null;
+  if (!val || typeof val !== 'object') return [];
+  return Object.values(val).sort(
+    (a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime(),
+  );
 }
 
 // ─── Stats (client-side, reads Firebase directly like other sections) ────────
