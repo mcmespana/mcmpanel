@@ -28,39 +28,53 @@ interface AlbumsSectionProps {
   onUpdate: (data: any) => void;
 }
 
-// Spanish month names → month number
-const MONTH_MAP: Record<string, number> = {
-  enero: 1, ene: 1,
-  febrero: 2, feb: 2,
-  marzo: 3, mar: 3,
-  abril: 4, abr: 4,
-  mayo: 5,
-  junio: 6, jun: 6,
-  julio: 7, jul: 7,
-  agosto: 8, ago: 8,
-  septiembre: 9, sep: 9, sept: 9,
-  octubre: 10, oct: 10,
-  noviembre: 11, nov: 11,
-  diciembre: 12, dic: 12,
-};
+// Spanish month names → month number (longest keys first to avoid prefix collisions)
+const MONTH_ENTRIES: [string, number][] = [
+  ['septiembre', 9], ['noviembre', 11], ['diciembre', 12], ['febrero', 2],
+  ['octubre', 10], ['agosto', 8], ['enero', 1], ['marzo', 3], ['abril', 4],
+  ['junio', 6], ['julio', 7], ['mayo', 5], ['sept', 9], ['ene', 1],
+  ['feb', 2], ['mar', 3], ['abr', 4], ['jun', 6], ['jul', 7],
+  ['ago', 8], ['sep', 9], ['oct', 10], ['nov', 11], ['dic', 12],
+];
 
-function parseDateSortKey(dateStr: string): number {
-  if (!dateStr) return 0;
-  const lower = dateStr.toLowerCase().trim();
+// Numeric month in patterns like "14/3", "7-8 de marzo", "3/2024", etc.
+const NUMERIC_MONTH_RE = /\b(?:0?([1-9])|1([012]))\s*[-\/]\s*(?:20\d{2}|\d{1,2}\b)/;
 
-  // Last 4-digit number = year
-  const years = lower.match(/\d{4}/g);
-  const year = years ? parseInt(years[years.length - 1]) : 0;
-
-  // Find first matching Spanish month name (longest first to avoid partial matches)
-  const sortedKeys = Object.keys(MONTH_MAP).sort((a, b) => b.length - a.length);
-  let month = 0;
-  for (const name of sortedKeys) {
-    if (lower.includes(name)) {
-      month = MONTH_MAP[name];
-      break;
-    }
+function extractMonth(text: string): number {
+  // Text month names take priority (more unambiguous)
+  for (const [name, num] of MONTH_ENTRIES) {
+    if (text.includes(name)) return num;
   }
+  // Fallback: try numeric month in "M/YYYY" or "D/M" patterns
+  const m = text.match(NUMERIC_MONTH_RE);
+  if (m) return parseInt(m[1] ?? m[2]);
+  return 0;
+}
+
+function extractYear(text: string): number {
+  // All 4-digit sequences that look like a year (20xx)
+  const hits = [...text.matchAll(/\b(20\d{2})\b/g)];
+  // Return the last one found (handles "Encuentro 2024 · 7-8 marzo")
+  return hits.length ? parseInt(hits[hits.length - 1][1]) : 0;
+}
+
+/**
+ * Returns a numeric sort key (YYYYMM) by mining both the date field and
+ * the title. Year is taken from whichever field contains it; month from
+ * whichever field has a month name or numeric month. Date field wins on
+ * ties so "7-8 marzo" + title "Encuentro 2024" → 202403.
+ */
+function parseDateSortKey(album: Pick<Album, 'title' | 'date'>): number {
+  const dateLow = (album.date ?? '').toLowerCase();
+  const titleLow = (album.title ?? '').toLowerCase();
+
+  const yearFromDate  = extractYear(dateLow);
+  const yearFromTitle = extractYear(titleLow);
+  const year = yearFromDate || yearFromTitle;
+
+  const monthFromDate  = extractMonth(dateLow);
+  const monthFromTitle = extractMonth(titleLow);
+  const month = monthFromDate || monthFromTitle;
 
   return year * 100 + month;
 }
@@ -118,7 +132,7 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
   };
 
   const handleSortChronological = () => {
-    const sorted = [...albums].sort((a, b) => parseDateSortKey(b.date) - parseDateSortKey(a.date));
+    const sorted = [...albums].sort((a, b) => parseDateSortKey(b) - parseDateSortKey(a));
     setAlbums(sorted);
     toast({ title: 'Ordenado por fecha', description: 'Más reciente primero. Guarda para conservar el orden.' });
   };
