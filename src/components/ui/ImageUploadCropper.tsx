@@ -9,6 +9,22 @@ import { cn } from '@/lib/utils';
 import { getCroppedImg, uploadImageToStorage } from '@/lib/imageUpload';
 import { useToast } from '@/hooks/use-toast';
 
+function isHeicFile(file: File) {
+  return (
+    file.type === 'image/heic' ||
+    file.type === 'image/heif' ||
+    file.name.toLowerCase().endsWith('.heic') ||
+    file.name.toLowerCase().endsWith('.heif')
+  );
+}
+
+async function convertHeicToJpeg(file: File): Promise<Blob> {
+  // Lazy-load heic2any to avoid adding it to the main bundle
+  const heic2any = (await import('heic2any')).default;
+  const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.95 });
+  return Array.isArray(result) ? result[0] : result;
+}
+
 interface ImageUploadCropperProps {
   value: string;
   onChange: (url: string) => void;
@@ -35,6 +51,7 @@ export function ImageUploadCropper({
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [converting, setConverting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -42,13 +59,30 @@ export function ImageUploadCropper({
     setCroppedAreaPixels(pixels);
   }, []);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      toast({ title: 'Formato inválido', description: 'Selecciona una imagen (JPG, PNG, WebP…)', variant: 'destructive' });
+    const validImage = file.type.startsWith('image/') || isHeicFile(file);
+    if (!validImage) {
+      toast({ title: 'Formato inválido', description: 'Selecciona una imagen (JPG, PNG, WebP, HEIC…)', variant: 'destructive' });
       return;
+    }
+
+    e.target.value = '';
+    let blob: Blob = file;
+
+    if (isHeicFile(file)) {
+      setConverting(true);
+      try {
+        blob = await convertHeicToJpeg(file);
+      } catch {
+        toast({ title: 'Error HEIC', description: 'No se pudo convertir la imagen. Intenta con JPG/PNG.', variant: 'destructive' });
+        setConverting(false);
+        return;
+      } finally {
+        setConverting(false);
+      }
     }
 
     const reader = new FileReader();
@@ -57,8 +91,7 @@ export function ImageUploadCropper({
       setCrop({ x: 0, y: 0 });
       setZoom(1);
     };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    reader.readAsDataURL(blob);
   };
 
   const handleConfirmCrop = async () => {
@@ -117,17 +150,24 @@ export function ImageUploadCropper({
             </div>
           )}
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <div className="flex flex-col items-center gap-1 text-white">
-              <Upload className="w-6 h-6" />
-              <span className="text-xs font-medium">{value ? 'Cambiar imagen' : 'Subir imagen'}</span>
-            </div>
+            {converting ? (
+              <div className="flex flex-col items-center gap-1 text-white">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-xs font-medium">Convirtiendo HEIC…</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-1 text-white">
+                <Upload className="w-6 h-6" />
+                <span className="text-xs font-medium">{value ? 'Cambiar imagen' : 'Subir imagen'}</span>
+              </div>
+            )}
           </div>
         </div>
 
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           className="hidden"
           onChange={handleFileSelect}
         />

@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Edit3, Trash2, Save, X, ExternalLink, CheckCircle2, Image as ImageIcon, GripVertical } from 'lucide-react';
+import {
+  Plus, Edit3, Trash2, Save, X, ExternalLink, CheckCircle2,
+  Image as ImageIcon, GripVertical, ArrowUpToLine, ArrowDownToLine, ArrowUpDown,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,69 +28,99 @@ interface AlbumsSectionProps {
   onUpdate: (data: any) => void;
 }
 
+// Spanish month names → month number
+const MONTH_MAP: Record<string, number> = {
+  enero: 1, ene: 1,
+  febrero: 2, feb: 2,
+  marzo: 3, mar: 3,
+  abril: 4, abr: 4,
+  mayo: 5,
+  junio: 6, jun: 6,
+  julio: 7, jul: 7,
+  agosto: 8, ago: 8,
+  septiembre: 9, sep: 9, sept: 9,
+  octubre: 10, oct: 10,
+  noviembre: 11, nov: 11,
+  diciembre: 12, dic: 12,
+};
+
+function parseDateSortKey(dateStr: string): number {
+  if (!dateStr) return 0;
+  const lower = dateStr.toLowerCase().trim();
+
+  // Last 4-digit number = year
+  const years = lower.match(/\d{4}/g);
+  const year = years ? parseInt(years[years.length - 1]) : 0;
+
+  // Find first matching Spanish month name (longest first to avoid partial matches)
+  const sortedKeys = Object.keys(MONTH_MAP).sort((a, b) => b.length - a.length);
+  let month = 0;
+  for (const name of sortedKeys) {
+    if (lower.includes(name)) {
+      month = MONTH_MAP[name];
+      break;
+    }
+  }
+
+  return year * 100 + month;
+}
+
 export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
-  const [albums, setAlbums] = useState<Album[]>(data?.data || []);
+  const [albums, setAlbums] = useState<Album[]>(() =>
+    [...(data?.data || [])].sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0))
+  );
   const [editingAlbum, setEditingAlbum] = useState<Album | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-
-  // Mantiene la lista ordenada por id desc al cargar por primera vez
-  // pero permite reordenación manual posterior sin renumerar ids
-  const [initialized, setInitialized] = useState(false);
-  // Orden inicial por id desc para una primera experiencia consistente
-  // sin renumerar ids. Tras ello se permite DnD libre.
-  React.useEffect(() => {
-    if (!initialized) {
-      setAlbums((prev) => [...prev].sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0)));
-      setInitialized(true);
-    }
-  }, [initialized]);
   const { toast } = useToast();
 
-  const saveChanges = () => {
-    onUpdate({
-      data: albums,
-      updatedAt: new Date().toISOString()
-    });
+  const saveChanges = (list = albums) => {
+    onUpdate({ data: list, updatedAt: new Date().toISOString() });
     setJustSaved(true);
     setTimeout(() => setJustSaved(false), 1500);
   };
 
   const handleCreateAlbum = () => {
-    const newId = Math.max(...albums.map(a => parseInt(a.id)), 0) + 1;
-    const newAlbum: Album = {
-      id: newId.toString(),
-      title: '',
-      albumUrl: '',
-      imageUrl: '',
-      date: '',
-      location: ''
-    };
-    setEditingAlbum(newAlbum);
+    const newId = Math.max(...albums.map(a => parseInt(a.id) || 0), 0) + 1;
+    setEditingAlbum({ id: newId.toString(), title: '', albumUrl: '', imageUrl: '', date: '', location: '' });
     setIsCreating(true);
   };
 
   const handleSaveAlbum = (album: Album) => {
-    let next = albums;
-    if (isCreating) {
-      next = [...albums, album];
-    } else {
-      next = albums.map(a => a.id === album.id ? album : a);
-    }
+    const next = isCreating
+      ? [album, ...albums]           // nuevo álbum siempre arriba
+      : albums.map(a => a.id === album.id ? album : a);
     setAlbums(next);
-    // Guardado inmediato y cierre de diálogo
     onUpdate({ data: next, updatedAt: new Date().toISOString() });
     setEditingAlbum(null);
     setIsCreating(false);
   };
 
   const handleDeleteAlbum = (id: string) => {
-    setAlbums(albums.filter(a => a.id !== id));
-    toast({
-      title: "Álbum eliminado",
-      description: "El álbum se ha eliminado correctamente",
-    });
+    const next = albums.filter(a => a.id !== id);
+    setAlbums(next);
+    toast({ title: 'Álbum eliminado', description: 'El álbum se ha eliminado correctamente' });
+  };
+
+  const handleMoveToTop = (index: number) => {
+    if (index === 0) return;
+    const list = [...albums];
+    list.unshift(list.splice(index, 1)[0]);
+    setAlbums(list);
+  };
+
+  const handleMoveToBottom = (index: number) => {
+    if (index === albums.length - 1) return;
+    const list = [...albums];
+    list.push(list.splice(index, 1)[0]);
+    setAlbums(list);
+  };
+
+  const handleSortChronological = () => {
+    const sorted = [...albums].sort((a, b) => parseDateSortKey(b.date) - parseDateSortKey(a.date));
+    setAlbums(sorted);
+    toast({ title: 'Ordenado por fecha', description: 'Más reciente primero. Guarda para conservar el orden.' });
   };
 
   const handleDragStart = (index: number) => setDraggedIndex(index);
@@ -113,12 +146,21 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
           <Button onClick={handleCreateAlbum} className="tech-glow" size="sm">
             <Plus className="w-4 h-4 mr-1.5" />
             Nuevo Álbum
           </Button>
-          <Button onClick={saveChanges} variant={justSaved ? 'default' : 'outline'} size="sm" className={`tech-glow ${justSaved ? 'bg-success text-success-foreground hover:bg-success/90' : ''}`}>
+          <Button onClick={handleSortChronological} variant="outline" size="sm" title="Ordenar por fecha (más reciente primero)">
+            <ArrowUpDown className="w-4 h-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Por fecha</span>
+          </Button>
+          <Button
+            onClick={() => saveChanges()}
+            variant={justSaved ? 'default' : 'outline'}
+            size="sm"
+            className={`tech-glow ${justSaved ? 'bg-success text-success-foreground hover:bg-success/90' : ''}`}
+          >
             {justSaved ? (
               <><CheckCircle2 className="w-4 h-4 sm:mr-1.5" /><span className="hidden sm:inline">Guardado</span></>
             ) : (
@@ -144,10 +186,8 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
               className="p-3 sm:p-4 bg-card/50 border-border/50 hover:bg-card/70 transition-all cursor-move"
             >
               <div className="flex items-center gap-2 sm:gap-3">
-                {/* Drag handle */}
                 <GripVertical className="w-4 h-4 text-muted-foreground flex-shrink-0 hidden sm:block" />
 
-                {/* Thumbnail */}
                 <div className="w-10 h-10 sm:w-14 sm:h-10 bg-muted rounded overflow-hidden flex items-center justify-center flex-shrink-0">
                   {album.imageUrl ? (
                     <img src={album.imageUrl} alt={album.title} className="w-full h-full object-cover" />
@@ -156,12 +196,10 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
                   )}
                 </div>
 
-                {/* ID badge */}
                 <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded flex-shrink-0">
                   #{album.id}
                 </span>
 
-                {/* Title + subtitle — flex-1 to push buttons to right */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-sm leading-tight truncate">{album.title || 'Sin título'}</h3>
@@ -176,10 +214,31 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
                   </p>
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  {/* Move to top / bottom */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    title="Mover al inicio"
+                    disabled={index === 0}
+                    onClick={(e) => { e.stopPropagation(); handleMoveToTop(index); }}
+                  >
+                    <ArrowUpToLine className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    title="Mover al final"
+                    disabled={index === albums.length - 1}
+                    onClick={(e) => { e.stopPropagation(); handleMoveToBottom(index); }}
+                  >
+                    <ArrowDownToLine className="w-3.5 h-3.5" />
+                  </Button>
+
                   {album.albumUrl && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
                       <a href={album.albumUrl} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
@@ -188,7 +247,7 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-7 w-7"
                     onClick={() => { setEditingAlbum(album); setIsCreating(false); }}
                   >
                     <Edit3 className="w-3.5 h-3.5" />
@@ -196,7 +255,7 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => handleDeleteAlbum(album.id)}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -210,7 +269,7 @@ export function AlbumsSection({ data, onUpdate }: AlbumsSectionProps) {
 
       {editingAlbum && (
         <Dialog open={!!editingAlbum} onOpenChange={() => setEditingAlbum(null)}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <AlbumEditor
               album={editingAlbum}
               onSave={handleSaveAlbum}
@@ -231,14 +290,7 @@ interface AlbumEditorProps {
 
 function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
   const [formData, setFormData] = useState<Album>(
-    album || {
-      id: '',
-      title: '',
-      albumUrl: '',
-      imageUrl: '',
-      date: '',
-      location: ''
-    }
+    album || { id: '', title: '', albumUrl: '', imageUrl: '', date: '', location: '' }
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -263,7 +315,7 @@ function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
           <span>{album?.id ? 'Editar Álbum' : 'Nuevo Álbum'}</span>
         </DialogTitle>
       </DialogHeader>
-      
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <Label htmlFor="title">Título</Label>
@@ -274,7 +326,7 @@ function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
             placeholder="Nombre del álbum"
           />
         </div>
-        
+
         <div>
           <Label htmlFor="albumUrl">URL del Álbum</Label>
           <Input
@@ -284,7 +336,7 @@ function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
             placeholder="https://photos.app.goo.gl/..."
           />
         </div>
-        
+
         <div>
           <Label>Imagen de portada</Label>
           <ImageUploadCropper
@@ -305,17 +357,17 @@ function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
             className="mt-1 text-xs"
           />
         </div>
-        
+
         <div>
           <Label htmlFor="date">Fecha</Label>
           <Input
             id="date"
             value={formData.date}
             onChange={(e) => handleChange('date', e.target.value)}
-            placeholder="Fecha del evento"
+            placeholder="Ej: Agosto 2024, Septiembre 2025…"
           />
         </div>
-        
+
         <div>
           <Label htmlFor="location">Ubicación</Label>
           <Input
