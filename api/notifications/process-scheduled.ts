@@ -9,19 +9,23 @@ import {
 } from '../_lib/push.js';
 import type { ScheduledNotification } from './schedule.js';
 
-// Invoked by the Vercel Cron defined in vercel.json (every minute). It finds
-// every scheduled notification whose time has come and dispatches it.
+// Invoked every minute by an external cron pinger (e.g. cron-job.org) that hits
+// this URL. It finds every scheduled notification whose time has come and
+// dispatches it.
 //
-// Security: when CRON_SECRET is configured, Vercel adds an
-// "Authorization: Bearer <CRON_SECRET>" header to cron invocations. We reject
-// anything that doesn't match so the endpoint can't be triggered by outsiders.
-// If CRON_SECRET is not set, the endpoint stays open (useful for manual runs).
+// Security: when CRON_SECRET is configured, the request must carry the secret,
+// either as an "Authorization: Bearer <CRON_SECRET>" header OR as a "?secret="
+// query param (whichever is easier to set up in the cron service). Anything
+// else is rejected so outsiders can't trigger sends. If CRON_SECRET is not set,
+// the endpoint stays open (useful for local/manual runs).
 
 function isAuthorized(req: VercelRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return true;
   const auth = req.headers.authorization || '';
-  return auth === `Bearer ${secret}`;
+  if (auth === `Bearer ${secret}`) return true;
+  const fromQuery = (req.query.secret as string) || (req.query.key as string) || '';
+  return fromQuery === secret;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
