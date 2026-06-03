@@ -4,10 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { MultiSelect } from './profile/MultiSelect';
 import { ALBUM_TAG_LABELS, KNOWN_ALBUM_TAGS } from '@/lib/profileCatalog';
+import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 
 interface Album {
   id: string;
@@ -285,12 +286,23 @@ function AlbumEditor({ album, onSave, onCancel }: AlbumEditorProps) {
         </div>
         
         <div>
-          <Label htmlFor="imageUrl">URL de la Imagen</Label>
+          <Label>Imagen de portada</Label>
+          <ImageUploadCropper
+            value={formData.imageUrl}
+            onChange={(url) => handleChange('imageUrl', url)}
+            storagePath="portadaAlbumes"
+            aspectRatio={16 / 9}
+            maxWidth={1200}
+            maxHeight={675}
+            quality={0.82}
+            className="mt-1"
+          />
           <Input
             id="imageUrl"
             value={formData.imageUrl}
             onChange={(e) => handleChange('imageUrl', e.target.value)}
-            placeholder="https://firebasestorage.googleapis.com/..."
+            placeholder="O pega una URL directamente…"
+            className="mt-1 text-xs"
           />
         </div>
         
