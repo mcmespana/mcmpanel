@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Send, Bell, Users, Target, Smartphone, Clock,
-  CheckCircle, Trash2, BarChart3, AlertTriangle,
+  CheckCircle, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw, Megaphone,
 } from 'lucide-react';
+import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -487,13 +488,22 @@ export function NotificationsSection() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="imageUrl">URL de imagen</Label>
+                      <Label>Imagen de notificación</Label>
+                      <ImageUploadCropper
+                        value={form.imageUrl}
+                        onChange={(url) => updateForm('imageUrl', url)}
+                        storagePath="notificaciones"
+                        aspectRatio={2 / 1}
+                        maxWidth={1024}
+                        maxHeight={512}
+                        quality={0.75}
+                      />
                       <Input
                         id="imageUrl"
-                        placeholder="https://example.com/image.jpg"
+                        placeholder="O pega una URL directamente…"
                         value={form.imageUrl}
                         onChange={(e) => updateForm('imageUrl', e.target.value)}
-                        className="bg-input border-border/50"
+                        className="bg-input border-border/50 text-xs"
                       />
                       <p className="text-xs text-muted-foreground">
                         Se ve en la notificación en Android. En iOS solo dentro de la app.
