@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Plus, ArrowLeft, Eye, EyeOff, Settings2, Zap, Archive } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, ArrowLeft, Eye, EyeOff, Settings2, Zap, Archive, Code2, Save, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 import {
   Select,
   SelectContent,
@@ -59,10 +61,14 @@ const subsections = [
 const NONE = '__none__';
 
 export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
+  const { toast } = useToast();
   const [selectedActivity, setSelectedActivity] = useState<ActivityId | null>('visitapapa26');
   const [selectedSubsection, setSelectedSubsection] = useState<SubsectionId | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newActivityName, setNewActivityName] = useState('');
+  const [rawJsonMode, setRawJsonMode] = useState(false);
+  const [rawJsonText, setRawJsonText] = useState('');
+  const [rawJsonError, setRawJsonError] = useState<string | null>(null);
 
   // _meta at root level is reserved for global event config; exclude from activity list
   const globalMeta: GlobalMeta = data?._meta ?? {};
@@ -136,6 +142,31 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
     });
   };
 
+  const handleEnterRawMode = () => {
+    if (!selectedSubsection || !currentActivityData) return;
+    const subsectionData = currentActivityData[selectedSubsection];
+    setRawJsonText(JSON.stringify(subsectionData, null, 2));
+    setRawJsonError(null);
+    setRawJsonMode(true);
+  };
+
+  const handleCancelRawMode = () => {
+    setRawJsonMode(false);
+    setRawJsonError(null);
+  };
+
+  const handleSaveRawJson = () => {
+    try {
+      const parsed = JSON.parse(rawJsonText);
+      handleSubsectionUpdate(parsed);
+      setRawJsonMode(false);
+      setRawJsonError(null);
+      toast({ title: 'JSON guardado', description: 'Los datos se han actualizado correctamente.' });
+    } catch (e) {
+      setRawJsonError((e as Error).message);
+    }
+  };
+
   const renderSubsection = () => {
     if (!selectedSubsection || !currentActivityData) return null;
     const subsectionData = currentActivityData[selectedSubsection];
@@ -156,26 +187,64 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   if (selectedSubsection && selectedActivity) {
     return (
       <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setSelectedSubsection(null)}
-            className="gap-2 self-start sm:self-auto"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Volver
-          </Button>
-          <div className="min-w-0">
-            <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent truncate">
-              {subsections.find(s => s.id === selectedSubsection)?.title}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-0.5 truncate">
-              {selectedActivity} — {subsections.find(s => s.id === selectedSubsection)?.description}
-            </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setSelectedSubsection(null); setRawJsonMode(false); setRawJsonError(null); }}
+              className="gap-2 self-start sm:self-auto"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver
+            </Button>
+            <div className="min-w-0">
+              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent truncate">
+                {subsections.find(s => s.id === selectedSubsection)?.title}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                {selectedActivity} — {subsections.find(s => s.id === selectedSubsection)?.description}
+              </p>
+            </div>
           </div>
+          <Button
+            variant={rawJsonMode ? 'default' : 'outline'}
+            size="sm"
+            onClick={rawJsonMode ? handleCancelRawMode : handleEnterRawMode}
+            className="gap-2 self-start sm:self-auto flex-shrink-0"
+          >
+            <Code2 className="w-4 h-4" />
+            {rawJsonMode ? 'Cancelar JSON' : 'Ver / Editar JSON'}
+          </Button>
         </div>
-        {renderSubsection()}
+
+        {rawJsonMode ? (
+          <div className="space-y-3">
+            <Textarea
+              value={rawJsonText}
+              onChange={(e) => { setRawJsonText(e.target.value); setRawJsonError(null); }}
+              className="font-mono text-xs min-h-[60vh] resize-y bg-muted/30"
+              spellCheck={false}
+            />
+            {rawJsonError && (
+              <p className="text-sm text-destructive font-mono bg-destructive/10 px-3 py-2 rounded-md">
+                Error al parsear JSON: {rawJsonError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={handleSaveRawJson} className="gap-2 tech-glow">
+                <Save className="w-4 h-4" />
+                Guardar JSON
+              </Button>
+              <Button variant="outline" onClick={handleCancelRawMode} className="gap-2">
+                <X className="w-4 h-4" />
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        ) : (
+          renderSubsection()
+        )}
       </div>
     );
   }
