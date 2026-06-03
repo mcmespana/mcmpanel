@@ -145,7 +145,7 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   const handleEnterRawMode = () => {
     if (!selectedSubsection || !currentActivityData) return;
     const subsectionData = currentActivityData[selectedSubsection];
-    setRawJsonText(JSON.stringify(subsectionData, null, 2));
+    setRawJsonText(JSON.stringify(subsectionData?.data, null, 2));
     setRawJsonError(null);
     setRawJsonMode(true);
   };
@@ -158,7 +158,8 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   const handleSaveRawJson = () => {
     try {
       const parsed = JSON.parse(rawJsonText);
-      handleSubsectionUpdate(parsed);
+      const subsectionData = currentActivityData?.[selectedSubsection!];
+      handleSubsectionUpdate({ ...subsectionData, data: parsed });
       setRawJsonMode(false);
       setRawJsonError(null);
       toast({ title: 'JSON guardado', description: 'Los datos se han actualizado correctamente.' });
