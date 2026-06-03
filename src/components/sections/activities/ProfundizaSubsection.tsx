@@ -31,7 +31,12 @@ export function ProfundizaSubsection({ data, onUpdate }: ProfundizaSubsectionPro
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogType, setDialogType] = useState<'pagina' | 'intro'>('pagina');
 
-  const profundizaData = data?.data || { introduccion: '', paginas: [] };
+  const rawProfundiza = data?.data ?? {};
+  const profundizaData: ProfundizaData = {
+    introduccion: rawProfundiza.introduccion ?? '',
+    paginas: Array.isArray(rawProfundiza.paginas) ? rawProfundiza.paginas : [],
+    titulo: rawProfundiza.titulo,
+  };
 
   const handleSavePagina = (paginaData: Partial<PaginaProfundiza>) => {
     if (editingPagina === null) return;
