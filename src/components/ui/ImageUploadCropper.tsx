@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Cropper from 'react-easy-crop';
 import type { Area } from 'react-easy-crop';
 import { Button } from './button';
@@ -52,6 +52,8 @@ export function ImageUploadCropper({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [uploading, setUploading] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -59,17 +61,13 @@ export function ImageUploadCropper({
     setCroppedAreaPixels(pixels);
   }, []);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     const validImage = file.type.startsWith('image/') || isHeicFile(file);
     if (!validImage) {
       toast({ title: 'Formato inválido', description: 'Selecciona una imagen (JPG, PNG, WebP, HEIC…)', variant: 'destructive' });
       return;
     }
 
-    e.target.value = '';
     let blob: Blob = file;
 
     if (isHeicFile(file)) {
@@ -92,6 +90,43 @@ export function ImageUploadCropper({
       setZoom(1);
     };
     reader.readAsDataURL(blob);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    await processFile(file);
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current === 0) setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) await processFile(file);
   };
 
   const handleConfirmCrop = async () => {
@@ -133,27 +168,44 @@ export function ImageUploadCropper({
     <>
       <div className={cn('space-y-2', className)}>
         <div
-          className="relative w-full rounded-lg overflow-hidden bg-muted/30 border border-border/50 cursor-pointer hover:border-primary/50 transition-colors group"
+          className={cn(
+            'relative w-full rounded-lg overflow-hidden bg-muted/30 border cursor-pointer transition-colors group',
+            isDragging
+              ? 'border-primary border-dashed bg-primary/10'
+              : 'border-border/50 hover:border-primary/50',
+          )}
           style={{ aspectRatio: String(aspectRatio) }}
           onClick={() => inputRef.current?.click()}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
-          aria-label={value ? 'Cambiar imagen de portada' : 'Subir imagen de portada'}
+          aria-label={value ? 'Cambiar imagen' : 'Subir imagen'}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
         >
           {value ? (
             <img src={value} alt="" className="w-full h-full object-cover" />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2 py-4">
               <ImageIcon className="w-8 h-8 opacity-40" />
-              <span className="text-xs">Haz clic para subir imagen</span>
+              <span className="text-xs">{isDragging ? 'Suelta la imagen aquí' : 'Haz clic o arrastra una imagen'}</span>
             </div>
           )}
-          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <div className={cn(
+            'absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity',
+            isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}>
             {converting ? (
               <div className="flex flex-col items-center gap-1 text-white">
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span className="text-xs font-medium">Convirtiendo HEIC…</span>
+              </div>
+            ) : isDragging ? (
+              <div className="flex flex-col items-center gap-1 text-white">
+                <Upload className="w-6 h-6" />
+                <span className="text-xs font-medium">Suelta aquí</span>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-1 text-white">
@@ -174,7 +226,13 @@ export function ImageUploadCropper({
       </div>
 
       <Dialog open={!!imageSrc} onOpenChange={(open) => !open && handleCancel()}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className="max-w-2xl"
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ImageIcon className="w-4 h-4" />
