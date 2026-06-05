@@ -11,7 +11,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel,
+  SelectSeparator, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -31,7 +34,10 @@ import {
 } from '@/lib/notificationService';
 
 const ALL = '__all';
-const NONE = '__none';
+// Default tap behaviour: send NO internalRoute so the app opens THIS notification
+// expanded ("en grande") inside the notification center, matching data.id against
+// its /notifications/<id> entry in Firebase.
+const DETAIL = '__detail';
 const CUSTOM_ROUTE = '__custom';
 
 // Vocabulario alineado con la MCM App (types/notifications.ts).
@@ -51,24 +57,38 @@ const PRIORITIES = [
   { id: 'high', label: 'Alta' },
 ];
 
-// Rutas REALES de la MCM App (Expo Router). Las marcadas con ⚠️ dependen del
-// perfil del usuario: si su perfil no tiene esa tab, la navegación puede no ir
-// a ningún sitio. Para envíos universales usa Inicio, Calendario, Fotos o Más.
-const INTERNAL_ROUTES = [
-  { id: NONE, label: 'Ninguna' },
-  { id: '/(tabs)/index', label: 'Inicio' },
-  { id: '/(tabs)/calendario', label: 'Calendario' },
-  { id: '/(tabs)/fotos', label: 'Fotos / Álbumes' },
-  { id: '/(tabs)/mas', label: 'Más (eventos: Jubileo, Visita Papa…)' },
-  { id: '/(tabs)/cancionero', label: 'Cancionero ⚠️ (según perfil)' },
-  { id: '/(tabs)/contigo', label: 'Contigo ⚠️ (según perfil)' },
-  { id: '/(tabs)/contigo/evangelio', label: 'Contigo · Evangelio del día ⚠️' },
-  { id: '/(tabs)/contigo/oracion', label: 'Contigo · Oración ⚠️' },
-  { id: '/(tabs)/contigo/revision', label: 'Contigo · Revisión ⚠️' },
-  { id: '/(tabs)/contigo/bookmarks', label: 'Contigo · Favoritos ⚠️' },
-  { id: '/(tabs)/visitapapa', label: 'Visita del Papa ⚠️ (si activo)' },
-  { id: '/notifications', label: 'Centro de notificaciones' },
-  { id: CUSTOM_ROUTE, label: 'Personalizada (deep link)…' },
+// Rutas REALES de la MCM App (Expo Router) agrupadas para el desplegable.
+// Las del grupo "según perfil" (⚠️) dependen del perfil del usuario: si su
+// perfil no tiene esa tab, la navegación puede no ir a ningún sitio. Para
+// envíos universales usa Inicio, Calendario, Fotos o Más.
+//
+// El desplegable se compone en este orden, de más cómodo a más avanzado:
+//   1. DETAIL  → abrir la notificación en grande (recomendado, sin ruta)
+//   2. Secciones para todos
+//   3. Secciones según perfil
+//   4. Ruta personalizada (deep link)
+const ROUTE_GROUPS: { label: string; routes: { id: string; label: string }[] }[] = [
+  {
+    label: 'Secciones para todos',
+    routes: [
+      { id: '/(tabs)/index', label: 'Inicio' },
+      { id: '/(tabs)/calendario', label: 'Calendario' },
+      { id: '/(tabs)/fotos', label: 'Fotos / Álbumes' },
+      { id: '/(tabs)/mas', label: 'Más (Jubileo, Visita del Papa…)' },
+    ],
+  },
+  {
+    label: 'Según perfil del usuario ⚠️',
+    routes: [
+      { id: '/(tabs)/cancionero', label: 'Cancionero' },
+      { id: '/(tabs)/contigo', label: 'Contigo' },
+      { id: '/(tabs)/contigo/evangelio', label: 'Contigo · Evangelio del día' },
+      { id: '/(tabs)/contigo/oracion', label: 'Contigo · Oración' },
+      { id: '/(tabs)/contigo/revision', label: 'Contigo · Revisión' },
+      { id: '/(tabs)/contigo/bookmarks', label: 'Contigo · Favoritos' },
+      { id: '/(tabs)/visitapapa', label: 'Visita del Papa (si está activa)' },
+    ],
+  },
 ];
 
 // Segmentación por "topics". Un perfil aporta familias/monitores/miembros y la
@@ -108,7 +128,7 @@ interface FormState {
   priority: 'default' | 'normal' | 'high';
   icon: string;
   imageUrl: string;
-  routeChoice: string;   // dropdown: preset id, NONE, or CUSTOM_ROUTE
+  routeChoice: string;   // dropdown: DETAIL, a preset route id, or CUSTOM_ROUTE
   customRoute: string;   // free-text deep link when routeChoice === CUSTOM_ROUTE
   // Single action button (canonical format expected by the app)
   buttonText: string;
@@ -126,7 +146,7 @@ const emptyForm: FormState = {
   priority: 'default',
   icon: '',
   imageUrl: '',
-  routeChoice: NONE,
+  routeChoice: DETAIL,
   customRoute: '',
   buttonText: '',
   buttonUrl: '',
@@ -135,10 +155,20 @@ const emptyForm: FormState = {
   delegationTopic: ALL,
 };
 
+// Resolves the internalRoute sent in the Expo payload (data.internalRoute).
+// DETAIL → undefined: with no internalRoute the app opens THIS notification
+// expanded in its detail view (it matches data.id against /notifications/<id>).
 function resolveRoute(form: FormState): string | undefined {
-  if (form.routeChoice === NONE) return undefined;
+  if (form.routeChoice === DETAIL) return undefined;
   if (form.routeChoice === CUSTOM_ROUTE) return form.customRoute.trim() || undefined;
   return form.routeChoice;
+}
+
+// Human-readable description of what happens when the user taps the push.
+function describeTapAction(form: FormState): string {
+  const route = resolveRoute(form);
+  if (!route) return 'Abre la notificación en grande';
+  return route;
 }
 
 function resolveTopics(form: FormState): string[] {
@@ -640,19 +670,32 @@ export function NotificationsSection() {
                     </div>
                   </div>
 
-                  {/* Internal route */}
+                  {/* Internal route / tap action */}
                   <div className="space-y-2">
-                    <Label>Ruta interna (al tocar la notificación)</Label>
+                    <Label>Al tocar la notificación</Label>
                     <Select value={form.routeChoice} onValueChange={(v) => updateForm('routeChoice', v)}>
                       <SelectTrigger className="bg-input border-border/50">
-                        <SelectValue placeholder="Selecciona una ruta" />
+                        <SelectValue placeholder="Elige qué pasa al tocarla" />
                       </SelectTrigger>
                       <SelectContent>
-                        {INTERNAL_ROUTES.map((route) => (
-                          <SelectItem key={route.id} value={route.id}>
-                            {route.label}
-                          </SelectItem>
+                        {/* Recommended default: open this notification expanded */}
+                        <SelectItem value={DETAIL}>🔔 Abrir la notificación en grande</SelectItem>
+                        {ROUTE_GROUPS.map((group) => (
+                          <SelectGroup key={group.label}>
+                            <SelectSeparator />
+                            <SelectLabel className="text-muted-foreground">{group.label}</SelectLabel>
+                            {group.routes.map((route) => (
+                              <SelectItem key={route.id} value={route.id}>
+                                {route.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         ))}
+                        <SelectSeparator />
+                        <SelectGroup>
+                          <SelectLabel className="text-muted-foreground">Avanzado</SelectLabel>
+                          <SelectItem value={CUSTOM_ROUTE}>Ruta personalizada (deep link)…</SelectItem>
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     {form.routeChoice === CUSTOM_ROUTE && (
@@ -664,8 +707,9 @@ export function NotificationsSection() {
                       />
                     )}
                     <p className="text-xs text-muted-foreground">
-                      ⚠️ = la pantalla depende del perfil del usuario. Para todos, usa Inicio,
-                      Calendario, Fotos o Más.
+                      {form.routeChoice === DETAIL
+                        ? 'Recomendado: al tocarla se abre esta misma notificación desplegada en el centro de notificaciones.'
+                        : '⚠️ = la pantalla depende del perfil del usuario. Para todos, usa Inicio, Calendario, Fotos o Más.'}
                     </p>
                   </div>
 
@@ -885,12 +929,16 @@ export function NotificationsSection() {
                       {form.priority}
                     </Badge>
                   </div>
-                  {resolveRoute(form) && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-muted-foreground flex-shrink-0">Ruta:</span>
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded truncate">{resolveRoute(form)}</code>
-                    </div>
-                  )}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground flex-shrink-0">Al tocar:</span>
+                    {resolveRoute(form) ? (
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded truncate">{describeTapAction(form)}</code>
+                    ) : (
+                      <span className="text-right flex items-center gap-1">
+                        <Bell className="w-3 h-3" /> Abre la notificación
+                      </span>
+                    )}
+                  </div>
                   <div className="flex justify-between gap-2">
                     <span className="text-muted-foreground flex-shrink-0">Destinatarios:</span>
                     <span className="text-right flex items-center gap-1">
