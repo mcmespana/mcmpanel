@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ActiveSection, JSONData } from "./JSONManager";
-import { SECTION_META, SECTION_ORDER } from "@/lib/sections";
+import { SECTION_META, SECTION_ORDER, sectionHasData } from "@/lib/sections";
 
 interface AppSidebarProps {
   activeSection: ActiveSection;
@@ -71,24 +71,6 @@ export function AppSidebar({
     if (isMobile) {
       setOpenMobile(false);
     }
-  };
-
-  const getSectionHasData = (sectionId: ActiveSection): boolean => {
-    if (sectionId === 'notifications') return true;
-    const sectionData = jsonData[sectionId as keyof JSONData];
-    if (!sectionData) return false;
-    if (sectionId === 'app') {
-      return Object.keys((sectionData as any).feedback || {}).length > 0;
-    }
-    if (sectionId === 'profileConfig') {
-      return !!(sectionData as any).data;
-    }
-    if ((sectionData as any).data) {
-      return Array.isArray((sectionData as any).data)
-        ? (sectionData as any).data.length > 0
-        : Object.keys((sectionData as any).data).length > 0;
-    }
-    return Object.keys(sectionData).length > 0;
   };
 
   const SaveIcon = () => {
@@ -194,7 +176,7 @@ export function AppSidebar({
             <SidebarMenu className="space-y-0.5">
               {menuItems.map((item) => {
                 const isActive = activeSection === item.id;
-                const hasData = getSectionHasData(item.id);
+                const hasData = sectionHasData(jsonData, item.id);
 
                 return (
                   <SidebarMenuItem key={item.id}>

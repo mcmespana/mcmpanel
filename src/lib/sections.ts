@@ -1,3 +1,4 @@
+import type { JSONData } from '@/components/JSONManager';
 import {
   Home,
   Database,
@@ -135,4 +136,33 @@ export function sectionForPath(pathname: string): SectionId {
   const slug = pathname.replace(/^\/+/, '').split('/')[0] ?? '';
   if (!slug) return 'home';
   return SLUG_TO_SECTION[slug] ?? 'home';
+}
+
+/**
+ * Whether a section already has content in Firebase, used to render the
+ * "has data" dot in the sidebar and home dashboard. Notifications has no
+ * stored blob (it acts on a live queue), so it always counts as present.
+ */
+export function sectionHasData(jsonData: JSONData, id: SectionId): boolean {
+  if (id === 'notifications' || id === 'home') return true;
+  const value = jsonData[id as keyof JSONData] as unknown;
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+
+  if (id === 'app') {
+    const feedback = record.feedback;
+    return !!feedback && typeof feedback === 'object' && Object.keys(feedback).length > 0;
+  }
+  if (id === 'profileConfig') {
+    return !!record.data;
+  }
+  if (record.data !== undefined) {
+    if (Array.isArray(record.data)) return record.data.length > 0;
+    return (
+      !!record.data &&
+      typeof record.data === 'object' &&
+      Object.keys(record.data).length > 0
+    );
+  }
+  return Object.keys(record).length > 0;
 }

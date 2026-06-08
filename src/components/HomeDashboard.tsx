@@ -1,6 +1,6 @@
 import { Send, CalendarClock, History, ChevronRight, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SECTION_META, SECTION_ORDER, type SectionId } from '@/lib/sections';
+import { SECTION_META, SECTION_ORDER, sectionHasData, type SectionId } from '@/lib/sections';
 import type { JSONData } from './JSONManager';
 
 interface HomeDashboardProps {
@@ -15,19 +15,7 @@ interface HomeDashboardProps {
  * two taps straight from their phone.
  */
 export function HomeDashboard({ jsonData, onNavigate }: HomeDashboardProps) {
-  const hasData = (id: SectionId): boolean => {
-    if (id === 'notifications' || id === 'home') return true;
-    const sectionData = jsonData[id as keyof JSONData];
-    if (!sectionData) return false;
-    if (id === 'app') return Object.keys((sectionData as any).feedback || {}).length > 0;
-    if (id === 'profileConfig') return !!(sectionData as any).data;
-    if ((sectionData as any).data) {
-      return Array.isArray((sectionData as any).data)
-        ? (sectionData as any).data.length > 0
-        : Object.keys((sectionData as any).data).length > 0;
-    }
-    return Object.keys(sectionData).length > 0;
-  };
+  const hasData = (id: SectionId): boolean => sectionHasData(jsonData, id);
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto">
