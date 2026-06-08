@@ -15,10 +15,13 @@ import { ProfileConfigSection } from './sections/ProfileConfigSection';
 import type { ProfileConfigDocument } from '@/types/profileConfig';
 import { SEED_PROFILE_CONFIG } from '@/lib/profileConfigSeed';
 import { disableAppReviewMode, enableAppReviewMode } from '@/lib/appReviewMode';
+import { HomeDashboard } from './HomeDashboard';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref, set } from 'firebase/database';
 import { cn } from '@/lib/utils';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { SECTION_META, pathForSection, sectionForPath, type SectionId } from '@/lib/sections';
 
 export type JSONData = {
   albums?: any;
@@ -31,18 +34,7 @@ export type JSONData = {
   profileConfig?: ProfileConfigDocument;
 };
 
-export type ActiveSection = 'albums' | 'app' | 'calendars' | 'songs' | 'wordle' | 'activities' | 'notifications' | 'profileConfig';
-
-const SECTION_LABELS: Record<ActiveSection, string> = {
-  albums: 'Albums',
-  app: 'App',
-  calendars: 'Calendars',
-  songs: 'Cantoral',
-  wordle: 'Wordle',
-  activities: 'Actividades',
-  notifications: 'Notificaciones',
-  profileConfig: 'Perfiles & Sistema',
-};
+export type ActiveSection = SectionId;
 
 export function JSONManager() {
   const [jsonData, setJsonData] = useState<JSONData | null>(null);
@@ -51,9 +43,17 @@ export function JSONManager() {
   const [dirty, setDirty] = useState(false);
   const [firebaseConnected, setFirebaseConnected] = useState(false);
   const saveTimer = useRef<number | null>(null);
-  const [activeSection, setActiveSection] = useState<ActiveSection>('albums');
   const { toast } = useToast();
   const pendingUpdates = useRef<Record<string, any>>({});
+
+  // The active section is derived from the URL so every section is linkable
+  // (e.g. /notificaciones) and the browser back/forward buttons work.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeSection = sectionForPath(location.pathname);
+  const goToSection = (section: ActiveSection, suffix = '') => {
+    navigate(`${pathForSection(section)}${suffix}`);
+  };
 
   // Track Firebase connection status via .info/connected
   useEffect(() => {
@@ -118,7 +118,7 @@ export function JSONManager() {
     URL.revokeObjectURL(url);
   };
 
-  const updateSectionData = (section: ActiveSection, newData: any) => {
+  const updateSectionData = (section: keyof JSONData | 'jubileo', newData: any) => {
     if (!jsonData) return;
     // profileConfig already arrives shaped as { updatedAt, data } — don't double-wrap.
     const value = section === 'profileConfig'
@@ -247,6 +247,8 @@ export function JSONManager() {
 
   const renderActiveSection = () => {
     switch (activeSection) {
+      case 'home':
+        return <HomeDashboard jsonData={jsonData!} onNavigate={goToSection} />;
       case 'albums':
         return <AlbumsSection data={jsonData!.albums} onUpdate={(data) => updateSectionData('albums', data)} />;
       case 'app':
@@ -291,7 +293,7 @@ export function JSONManager() {
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar
           activeSection={activeSection}
-          onSectionChange={setActiveSection}
+          onSectionChange={goToSection}
           jsonData={jsonData}
           firebaseConnected={firebaseConnected}
           saveStatus={saveStatus}
@@ -308,12 +310,16 @@ export function JSONManager() {
 
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {/* Section breadcrumb on mobile, full title on desktop */}
-              <span className="hidden sm:block text-sm font-medium text-muted-foreground/70 select-none">
+              <button
+                type="button"
+                onClick={() => goToSection('home')}
+                className="hidden sm:block text-sm font-medium text-muted-foreground/70 hover:text-foreground transition-colors select-none"
+              >
                 MCM Panel
-              </span>
+              </button>
               <span className="hidden sm:block text-muted-foreground/40 text-sm">/</span>
               <span className="text-sm font-semibold truncate">
-                {SECTION_LABELS[activeSection]}
+                {SECTION_META[activeSection].title}
               </span>
             </div>
 

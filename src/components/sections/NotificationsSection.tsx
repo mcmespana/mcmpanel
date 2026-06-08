@@ -18,6 +18,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useSearchParams } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref } from 'firebase/database';
@@ -236,6 +237,23 @@ export function NotificationsSection() {
   const [scheduled, setScheduled] = useState<ScheduledNotification[]>([]);
   const { toast } = useToast();
 
+  // Active tab is mirrored in the URL (?tab=compose) so the home dashboard can
+  // deep-link straight to composing, scheduled or history.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const TABS = ['dashboard', 'compose', 'scheduled', 'history'] as const;
+  const tabParam = searchParams.get('tab');
+  const activeTab = (TABS as readonly string[]).includes(tabParam ?? '') ? tabParam! : 'compose';
+  const handleTabChange = (value: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', value);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
   // Load notification history from Firebase
   useEffect(() => {
     const db = getDB();
@@ -407,11 +425,16 @@ export function NotificationsSection() {
         </div>
       </div>
 
-      <Tabs defaultValue="compose" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="compose">Crear Notificación</TabsTrigger>
-          <TabsTrigger value="scheduled" className="relative">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+          <TabsTrigger value="dashboard" className="h-9 whitespace-normal text-xs sm:text-sm">
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="compose" className="h-9 whitespace-normal text-xs sm:text-sm">
+            <span className="sm:hidden">Crear</span>
+            <span className="hidden sm:inline">Crear Notificación</span>
+          </TabsTrigger>
+          <TabsTrigger value="scheduled" className="relative h-9 whitespace-normal text-xs sm:text-sm">
             Programadas
             {pendingCount > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
@@ -419,7 +442,9 @@ export function NotificationsSection() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="history">Historial</TabsTrigger>
+          <TabsTrigger value="history" className="h-9 whitespace-normal text-xs sm:text-sm">
+            Historial
+          </TabsTrigger>
         </TabsList>
 
         {/* ─── Dashboard Tab ───────────────────────────────────────────── */}
