@@ -13,12 +13,16 @@ export interface ActionButton {
 export interface SendNotificationRequest {
   title: string;
   body: string;
+  // Descripción extendida (solo el modal de detalle in-app). La app usa `body`
+  // como fallback si no viene. No enviar si está vacía o es igual a `body`.
+  bodyLong?: string;
   category: string;
   priority: 'default' | 'normal' | 'high';
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
-  actionButton?: ActionButton;
+  // Formato canónico: hasta 3 botones de acción in-app.
+  actionButtons?: ActionButton[];
   // Segmentación por "topics" (la app guarda un array topics[] por token).
   // Si se envían varios, el token debe contenerlos TODOS (AND). Vacío = a todos.
   topics?: string[];
@@ -58,11 +62,14 @@ export interface ScheduledNotification {
   id: string;
   title: string;
   body: string;
+  bodyLong?: string;
   category: string;
   priority: 'default' | 'normal' | 'high';
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
+  actionButtons?: ActionButton[] | null;
+  // Legacy single-button field on records created before the multi-button change.
   actionButton?: ActionButton | null;
   topics?: string[];
   scheduledFor: string;
@@ -77,12 +84,15 @@ export interface NotificationRecord {
   notificationId: string;
   title: string;
   body: string;
+  bodyLong?: string | null;
   category: string;
   priority: string;
   icon: string | null;
   imageUrl: string | null;
   internalRoute: string | null;
-  actionButton: ActionButton | null;
+  actionButtons?: ActionButton[] | null;
+  // Legacy single-button field on records created before the multi-button change.
+  actionButton?: ActionButton | null;
   topics: string[];
   status: string;
   createdAt: string;

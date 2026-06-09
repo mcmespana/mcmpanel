@@ -3,7 +3,7 @@ import {
   Send, Bell, Users, Target, Smartphone, Clock,
   CheckCircle, Trash2, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw, Megaphone,
-  CalendarClock, XCircle, Ban,
+  CalendarClock, XCircle, Ban, Plus, X, MousePointerClick,
 } from 'lucide-react';
 import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 import { Button } from '@/components/ui/button';
@@ -121,20 +121,41 @@ const DELEGATION_TOPICS = [
 
 const MAX_TITLE = 50;
 const MAX_BODY = 200;
+const MAX_BODY_LONG = 2000;
+// Mirrors MAX_ACTION_BUTTONS in the app (utils/notificationRoutes.ts).
+const MAX_ACTION_BUTTONS = 3;
+// The chip in the notification card truncates around here; keep it short.
+const MAX_BUTTON_TEXT = 20;
+
+// White-list of valid internal routes (used to validate "Interno" buttons).
+const INTERNAL_ROUTE_IDS = new Set(
+  ROUTE_GROUPS.flatMap((group) => group.routes.map((route) => route.id)),
+);
+
+// One row of the action-button repeater in the form.
+interface ActionButtonForm {
+  text: string;
+  url: string;
+  isInternal: boolean;
+}
+
+const emptyActionButton: ActionButtonForm = { text: '', url: '', isInternal: false };
 
 interface FormState {
   title: string;
   body: string;
+  // Extended description (in-app detail modal only). Sent only when the
+  // "Añadir descripción detallada" toggle is on and the textarea is non-empty.
+  bodyLong: string;
+  bodyLongEnabled: boolean;
   category: string;
   priority: 'default' | 'normal' | 'high';
   icon: string;
   imageUrl: string;
   routeChoice: string;   // dropdown: DETAIL, a preset route id, or CUSTOM_ROUTE
   customRoute: string;   // free-text deep link when routeChoice === CUSTOM_ROUTE
-  // Single action button (canonical format expected by the app)
-  buttonText: string;
-  buttonUrl: string;
-  buttonIsInternal: boolean;
+  // Up to MAX_ACTION_BUTTONS in-app action buttons (canonical `actionButtons`).
+  actionButtons: ActionButtonForm[];
   // Segmentation by topic (AND). ALL = no filter on that axis.
   profileTopic: string;
   delegationTopic: string;
@@ -143,15 +164,15 @@ interface FormState {
 const emptyForm: FormState = {
   title: '',
   body: '',
+  bodyLong: '',
+  bodyLongEnabled: false,
   category: 'general',
   priority: 'default',
   icon: '',
   imageUrl: '',
   routeChoice: DETAIL,
   customRoute: '',
-  buttonText: '',
-  buttonUrl: '',
-  buttonIsInternal: false,
+  actionButtons: [],
   profileTopic: ALL,
   delegationTopic: ALL,
 };
@@ -179,13 +200,45 @@ function resolveTopics(form: FormState): string[] {
   return topics;
 }
 
-function resolveActionButton(form: FormState): ActionButton | undefined {
-  if (!form.buttonText.trim() || !form.buttonUrl.trim()) return undefined;
-  return {
-    text: form.buttonText.trim(),
-    url: form.buttonUrl.trim(),
-    isInternal: form.buttonIsInternal,
-  };
+// Rows with no url are ignored. Returns the cleaned list (capped to the max) to
+// send as `data.actionButtons`. Firebase RTDB rejects `undefined`, so every
+// field is always a concrete value.
+function resolveActionButtons(form: FormState): ActionButton[] {
+  return form.actionButtons
+    .filter((btn) => btn.url.trim())
+    .slice(0, MAX_ACTION_BUTTONS)
+    .map((btn) => ({
+      text: btn.text.trim() || 'Ver',
+      url: btn.url.trim(),
+      isInternal: btn.isInternal,
+    }));
+}
+
+// Returns the extended description to send, or undefined when it adds nothing
+// (toggle off, empty, or identical to `body` — the app falls back to `body`).
+function resolveBodyLong(form: FormState): string | undefined {
+  if (!form.bodyLongEnabled) return undefined;
+  const long = form.bodyLong.trim();
+  if (!long || long === form.body.trim()) return undefined;
+  return long;
+}
+
+// Validates a single non-empty button row. Returns an error message or null.
+function validateActionButton(btn: ActionButtonForm, index: number): string | null {
+  const text = btn.text.trim();
+  const url = btn.url.trim();
+  if (!text && !url) return null; // empty row, ignored on send
+  const label = `Botón ${index + 1}`;
+  if (!text) return `${label}: falta el texto.`;
+  if (!url) return `${label}: falta la URL o ruta.`;
+  if (btn.isInternal) {
+    if (!INTERNAL_ROUTE_IDS.has(url)) {
+      return `${label}: "${url}" no es una ruta interna válida. Elige una de la lista o usa una URL externa.`;
+    }
+  } else if (!/^https:\/\//i.test(url)) {
+    return `${label}: la URL externa debe empezar por https://`;
+  }
+  return null;
 }
 
 // <input type="datetime-local"> gives a value WITHOUT timezone (e.g.
@@ -310,6 +363,34 @@ export function NotificationsSection() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const addActionButton = () => {
+    setForm((prev) =>
+      prev.actionButtons.length >= MAX_ACTION_BUTTONS
+        ? prev
+        : { ...prev, actionButtons: [...prev.actionButtons, { ...emptyActionButton }] },
+    );
+  };
+
+  const removeActionButton = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      actionButtons: prev.actionButtons.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateActionButton = (
+    index: number,
+    field: keyof ActionButtonForm,
+    value: string | boolean,
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      actionButtons: prev.actionButtons.map((btn, i) =>
+        i === index ? { ...btn, [field]: value } : btn,
+      ),
+    }));
+  };
+
   const segmented = form.profileTopic !== ALL || form.delegationTopic !== ALL;
 
   const handleSend = async () => {
@@ -322,15 +403,26 @@ export function NotificationsSection() {
       return;
     }
 
+    // Validate every non-empty action-button row before building the payload.
+    for (let i = 0; i < form.actionButtons.length; i++) {
+      const error = validateActionButton(form.actionButtons[i], i);
+      if (error) {
+        toast({ title: 'Botón inválido', description: error, variant: 'destructive' });
+        return;
+      }
+    }
+
+    const actionButtons = resolveActionButtons(form);
     const payload: SendNotificationRequest = {
       title: form.title.trim(),
       body: form.body.trim(),
+      bodyLong: resolveBodyLong(form),
       category: form.category,
       priority: form.priority,
       icon: form.icon || undefined,
       imageUrl: form.imageUrl || undefined,
       internalRoute: resolveRoute(form),
-      actionButton: resolveActionButton(form),
+      actionButtons: actionButtons.length ? actionButtons : undefined,
       topics: segmented ? resolveTopics(form) : undefined,
     };
 
@@ -617,6 +709,40 @@ export function NotificationsSection() {
                     </div>
                   </div>
 
+                  {/* Extended description (bodyLong) */}
+                  <div className="space-y-3 p-4 bg-muted/10 rounded-lg border border-border/30">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="bodylong-enabled" className="text-sm font-medium">
+                        Añadir descripción detallada
+                      </Label>
+                      <Switch
+                        id="bodylong-enabled"
+                        checked={form.bodyLongEnabled}
+                        onCheckedChange={(v) => updateForm('bodyLongEnabled', v)}
+                      />
+                    </div>
+                    {form.bodyLongEnabled ? (
+                      <div className="space-y-2">
+                        <Textarea
+                          id="bodyLong"
+                          placeholder="Texto largo con detalles, horarios, etc. Respeta saltos de línea."
+                          value={form.bodyLong}
+                          onChange={(e) => updateForm('bodyLong', e.target.value.slice(0, MAX_BODY_LONG))}
+                          className="bg-input border-border/50 min-h-[120px]"
+                          maxLength={MAX_BODY_LONG}
+                        />
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Solo se ve al abrir la notificación en la app (texto plano).</span>
+                          <span>{form.bodyLong.length}/{MAX_BODY_LONG}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Si lo dejas desactivado, al abrir la notificación se mostrará el cuerpo de arriba.
+                      </p>
+                    )}
+                  </div>
+
                   {/* Category + Priority */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -738,33 +864,89 @@ export function NotificationsSection() {
                     </p>
                   </div>
 
-                  {/* Action button (single, canonical) */}
+                  {/* Action buttons (dynamic list, up to MAX_ACTION_BUTTONS) */}
                   <div className="space-y-3 p-4 bg-muted/10 rounded-lg border border-border/30">
-                    <Label className="text-sm font-medium">Botón de acción (opcional)</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <Input
-                        placeholder="Texto del botón"
-                        value={form.buttonText}
-                        onChange={(e) => updateForm('buttonText', e.target.value)}
-                        className="bg-input border-border/50"
-                      />
-                      <Input
-                        placeholder={form.buttonIsInternal ? '/(tabs)/fotos' : 'https://…'}
-                        value={form.buttonUrl}
-                        onChange={(e) => updateForm('buttonUrl', e.target.value)}
-                        className="bg-input border-border/50"
-                      />
-                    </div>
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="btn-internal" className="text-xs text-muted-foreground font-normal">
-                        La URL es una ruta interna de la app (no un enlace web)
+                      <Label className="text-sm font-medium flex items-center">
+                        <MousePointerClick className="w-4 h-4 mr-2" />
+                        Botones de acción (opcional)
                       </Label>
-                      <Switch
-                        id="btn-internal"
-                        checked={form.buttonIsInternal}
-                        onCheckedChange={(v) => updateForm('buttonIsInternal', v)}
-                      />
+                      <span className="text-xs text-muted-foreground">
+                        {form.actionButtons.length}/{MAX_ACTION_BUTTONS}
+                      </span>
                     </div>
+
+                    {form.actionButtons.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Sin botones: la notificación no muestra ninguna acción extra.
+                      </p>
+                    )}
+
+                    {form.actionButtons.map((btn, index) => (
+                      <div
+                        key={index}
+                        className="space-y-2 p-3 bg-background/40 rounded-md border border-border/30"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Botón {index + 1}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-destructive hover:text-destructive"
+                            onClick={() => removeActionButton(index)}
+                          >
+                            <X className="w-3.5 h-3.5 mr-1" />
+                            Eliminar
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <Input
+                            placeholder="Texto del botón"
+                            value={btn.text}
+                            maxLength={MAX_BUTTON_TEXT}
+                            onChange={(e) =>
+                              updateActionButton(index, 'text', e.target.value.slice(0, MAX_BUTTON_TEXT))
+                            }
+                            className="bg-input border-border/50"
+                          />
+                          <Input
+                            placeholder={btn.isInternal ? '/(tabs)/fotos' : 'https://…'}
+                            value={btn.url}
+                            onChange={(e) => updateActionButton(index, 'url', e.target.value)}
+                            className="bg-input border-border/50 font-mono text-xs"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label
+                            htmlFor={`btn-internal-${index}`}
+                            className="text-xs text-muted-foreground font-normal"
+                          >
+                            Ruta interna de la app (no un enlace web)
+                          </Label>
+                          <Switch
+                            id={`btn-internal-${index}`}
+                            checked={btn.isInternal}
+                            onCheckedChange={(v) => updateActionButton(index, 'isInternal', v)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    {form.actionButtons.length < MAX_ACTION_BUTTONS && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={addActionButton}
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Añadir botón
+                      </Button>
+                    )}
                   </div>
 
                   {/* Recipient segmentation by topic */}
@@ -920,11 +1102,19 @@ export function NotificationsSection() {
                               />
                             </div>
                           )}
-                          {form.buttonText.trim() && (
+                          {form.actionButtons.some((b) => b.text.trim() || b.url.trim()) && (
                             <div className="mt-2 flex flex-wrap gap-1">
-                              <span className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded">
-                                {form.buttonText}
-                              </span>
+                              {form.actionButtons
+                                .filter((b) => b.text.trim() || b.url.trim())
+                                .slice(0, MAX_ACTION_BUTTONS)
+                                .map((b, i) => (
+                                  <span
+                                    key={i}
+                                    className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded"
+                                  >
+                                    {b.text.trim() || 'Ver'}
+                                  </span>
+                                ))}
                             </div>
                           )}
                           <div className="text-gray-400 text-xs mt-2">ahora</div>
@@ -977,8 +1167,16 @@ export function NotificationsSection() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Botón:</span>
-                    <span>{resolveActionButton(form) ? 'Sí' : 'No'}</span>
+                    <span className="text-muted-foreground">Botones:</span>
+                    <span>
+                      {resolveActionButtons(form).length > 0
+                        ? `${resolveActionButtons(form).length} de ${MAX_ACTION_BUTTONS}`
+                        : 'Ninguno'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Desc. detallada:</span>
+                    <span>{resolveBodyLong(form) ? 'Sí' : 'No'}</span>
                   </div>
                 </CardContent>
               </Card>

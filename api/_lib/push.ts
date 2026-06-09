@@ -9,6 +9,16 @@ const FIREBASE_DB_URL = process.env.VITE_FIREBASE_DATABASE_URL || process.env.FI
 const EXPO_PUSH_API = 'https://exp.host/--/api/v2/push/send';
 const CHUNK_SIZE = 100;
 
+// In-app action buttons: the app renders at most 3 (MAX_ACTION_BUTTONS in
+// mcm-app/utils/notificationRoutes.ts). Keep the panel/app limit in sync.
+export const MAX_ACTION_BUTTONS = 3;
+// bodyLong soft limit (mirrors NOTIFICACIONES_CONTRATO.md §3.bis).
+export const MAX_BODY_LONG = 2000;
+// Above this size we keep bodyLong only in the Firebase record and drop it from
+// the Expo `data` payload to stay clear of the ~4 KB APNs/FCM limit. The app
+// recovers it from /notifications/<id> when the notification is opened.
+const BODY_LONG_DATA_MAX = 1500;
+
 // iOS notification categories actually registered in the MCM App. Only these
 // produce native action buttons; any other value is ignored by the app.
 const IOS_CATEGORIES = new Set(['general', 'eventos', 'fotos']);
@@ -96,11 +106,18 @@ export interface ExpoPushTicket {
 export interface NotificationPayload {
   title: string;
   body: string;
+  // Extended, scrollable description shown only in the in-app detail modal.
+  // The app falls back to `body` when it's absent.
+  bodyLong?: string;
   category?: string;
   priority?: 'default' | 'normal' | 'high';
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
+  // Canonical format: up to 3 in-app action buttons.
+  actionButtons?: ActionButton[];
+  // Legacy single-button field. Still accepted for backwards compatibility and
+  // merged into actionButtons; the panel sends only actionButtons now.
   actionButton?: ActionButton | null;
   topics?: string[];
 }
@@ -123,7 +140,57 @@ export function validateNotificationPayload(body: Partial<NotificationPayload>):
   if (!body.title || !body.body) return 'title and body are required';
   if (body.title.length > 50) return 'title must be 50 characters or less';
   if (body.body.length > 200) return 'body must be 200 characters or less';
+  if (body.bodyLong && body.bodyLong.length > MAX_BODY_LONG) {
+    return `bodyLong must be ${MAX_BODY_LONG} characters or less`;
+  }
+  if (body.actionButtons && !Array.isArray(body.actionButtons)) {
+    return 'actionButtons must be an array';
+  }
   return null;
+}
+
+// ─── Normalization ─────────────────────────────────────────────────────────--
+
+// Collapses the canonical `actionButtons` array (and the legacy single
+// `actionButton`) into a clean, deduplicated list of at most MAX_ACTION_BUTTONS.
+// Mirrors the app's extractActionButtons(): buttons without a `url` are dropped,
+// `text` defaults to "Ver", and `isInternal` is inferred from the url when not
+// provided. Dedupe key is `url|text` (same as the app).
+export function normalizeActionButtons(body: NotificationPayload): ActionButton[] {
+  const collected: ActionButton[] = [];
+  if (Array.isArray(body.actionButtons)) collected.push(...body.actionButtons);
+  if (body.actionButton) collected.push(body.actionButton);
+
+  const seen = new Set<string>();
+  const result: ActionButton[] = [];
+
+  for (const btn of collected) {
+    if (!btn || typeof btn !== 'object') continue;
+    const url = typeof btn.url === 'string' ? btn.url.trim() : '';
+    if (!url) continue; // the app discards buttons without a url
+    const text = typeof btn.text === 'string' && btn.text.trim() ? btn.text.trim() : 'Ver';
+    const isInternal = typeof btn.isInternal === 'boolean'
+      ? btn.isInternal
+      : !/^https?:\/\//i.test(url);
+
+    const key = `${url}|${text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    result.push({ text, url, isInternal });
+    if (result.length >= MAX_ACTION_BUTTONS) break;
+  }
+
+  return result;
+}
+
+// Returns the extended description to store, or null when it adds nothing
+// (empty, or identical to `body` — in which case the app's fallback handles it).
+export function normalizeBodyLong(body: NotificationPayload): string | null {
+  const long = typeof body.bodyLong === 'string' ? body.bodyLong.trim() : '';
+  if (!long) return null;
+  if (long === body.body.trim()) return null;
+  return long;
 }
 
 // ─── Expo helpers ────────────────────────────────────────────────────────────
@@ -167,21 +234,23 @@ export async function dispatchNotification(
 ): Promise<DispatchResult> {
   const category = body.category || 'general';
   const topics = (body.topics || []).filter(Boolean);
-  const actionButton = body.actionButton && body.actionButton.text && body.actionButton.url
-    ? body.actionButton
-    : null;
+  const actionButtons = normalizeActionButtons(body);
+  const bodyLong = normalizeBodyLong(body);
 
-  // Save the "sending" notification record to Firebase.
+  // Save the "sending" notification record to Firebase. bodyLong always lives in
+  // the record (the app reads it back from /notifications/<id> on open), even
+  // when it's too big to ride along in the push `data`.
   const notificationRecord = {
     notificationId,
     title: body.title,
     body: body.body,
+    bodyLong,
     category,
     priority: body.priority || 'default',
     icon: body.icon || null,
     imageUrl: body.imageUrl || null,
     internalRoute: body.internalRoute || null,
-    actionButton,
+    actionButtons: actionButtons.length ? actionButtons : null,
     topics,
     status: 'sending',
     createdAt: new Date().toISOString(),
@@ -243,19 +312,28 @@ export async function dispatchNotification(
       return true;
     })
     .map((t) => {
+      const data: Record<string, unknown> = {
+        id: notificationId, // critical: used by the app to dedupe / mark read
+        category,
+        internalRoute: body.internalRoute || null,
+        icon: body.icon || null,
+        imageUrl: body.imageUrl || null,
+        // Canonical: send only `actionButtons` (the app combines/dedupes if both
+        // are present, but sending one format avoids confusion).
+        actionButtons: actionButtons.length ? actionButtons : null,
+      };
+      // bodyLong rides along only when small enough; otherwise the app fetches
+      // it from the Firebase record to keep the payload under the ~4 KB limit.
+      if (bodyLong && bodyLong.length <= BODY_LONG_DATA_MAX) {
+        data.bodyLong = bodyLong;
+      }
+
       const msg: ExpoPushMessage & { _tokenKey: string } = {
         _tokenKey: t.key,
         to: t.token,
         title: body.title,
         body: body.body,
-        data: {
-          id: notificationId, // critical: used by the app to dedupe / mark read
-          category,
-          internalRoute: body.internalRoute || null,
-          icon: body.icon || null,
-          imageUrl: body.imageUrl || null,
-          actionButton,
-        },
+        data,
         categoryId: resolveCategoryId(category),
         priority: (body.priority || 'default') as 'default' | 'normal' | 'high',
         sound: 'default',

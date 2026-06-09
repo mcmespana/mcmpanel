@@ -64,11 +64,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const payload: NotificationPayload = {
           title: item.title,
           body: item.body,
+          bodyLong: item.bodyLong,
           category: item.category,
           priority: item.priority,
           icon: item.icon,
           imageUrl: item.imageUrl,
           internalRoute: item.internalRoute,
+          // New canonical field; `actionButton` kept for records scheduled
+          // before this change (normalizeActionButtons merges both).
+          actionButtons: item.actionButtons,
           actionButton: item.actionButton,
           topics: item.topics,
         };
