@@ -5,6 +5,8 @@ import {
   firebaseSet,
   firebasePatch,
   getFirebaseDbUrl,
+  normalizeActionButtons,
+  normalizeBodyLong,
   validateNotificationPayload,
   type NotificationPayload,
 } from '../_lib/push.js';
@@ -71,18 +73,18 @@ async function createSchedule(req: VercelRequest, res: VercelResponse) {
   }
 
   const id = crypto.randomUUID();
+  const actionButtons = normalizeActionButtons(body);
   const record: ScheduledNotification = {
     id,
     title: body.title,
     body: body.body,
+    bodyLong: normalizeBodyLong(body) || undefined,
     category: body.category || 'general',
     priority: body.priority || 'default',
     icon: body.icon || undefined,
     imageUrl: body.imageUrl || undefined,
     internalRoute: body.internalRoute || undefined,
-    actionButton: body.actionButton && body.actionButton.text && body.actionButton.url
-      ? body.actionButton
-      : null,
+    actionButtons: actionButtons.length ? actionButtons : undefined,
     topics: (body.topics || []).filter(Boolean),
     scheduledFor: when.toISOString(),
     status: 'scheduled',
