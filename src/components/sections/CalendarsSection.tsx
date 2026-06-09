@@ -263,7 +263,7 @@ function CalendarEditor({ calendar, onSave, onCancel }: CalendarEditorProps) {
             <Palette className="w-4 h-4" />
             <span>Color</span>
           </Label>
-          <div className="grid grid-cols-10 gap-2">
+          <div className="grid grid-cols-8 sm:grid-cols-10 gap-2">
             {pastelColors.map((color) => (
               <button
                 key={color}

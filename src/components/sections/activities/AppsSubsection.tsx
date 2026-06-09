@@ -91,7 +91,7 @@ export function AppsSubsection({ data, onUpdate }: AppsSubsectionProps) {
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="nombre">Nombre</Label>
             <Input
@@ -132,7 +132,7 @@ export function AppsSubsection({ data, onUpdate }: AppsSubsectionProps) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="androidLink">Android Link</Label>
             <Input
@@ -151,7 +151,7 @@ export function AppsSubsection({ data, onUpdate }: AppsSubsectionProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="iosLink">iOS Link</Label>
             <Input

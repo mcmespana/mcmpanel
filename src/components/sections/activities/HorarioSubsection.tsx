@@ -179,7 +179,7 @@ export function HorarioSubsection({ data, onUpdate }: HorarioSubsectionProps) {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="nombre">Nombre del Evento</Label>
                 <Input
@@ -198,7 +198,7 @@ export function HorarioSubsection({ data, onUpdate }: HorarioSubsectionProps) {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="icono">Icono (emoji)</Label>
                 <Input
