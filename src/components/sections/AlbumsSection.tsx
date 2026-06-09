@@ -38,7 +38,7 @@ const MONTH_ENTRIES: [string, number][] = [
 ];
 
 // Numeric month in patterns like "14/3", "7-8 de marzo", "3/2024", etc.
-const NUMERIC_MONTH_RE = /\b(?:0?([1-9])|1([012]))\s*[-\/]\s*(?:20\d{2}|\d{1,2}\b)/;
+const NUMERIC_MONTH_RE = /\b(?:0?([1-9])|1([012]))\s*[-/]\s*(?:20\d{2}|\d{1,2}\b)/;
 
 function extractMonth(text: string): number {
   // Text month names take priority (more unambiguous)

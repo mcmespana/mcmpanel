@@ -7,16 +7,18 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { 
-  Download, 
-  Music, 
-  ArrowLeft, 
-  Edit, 
+import {
+  Download,
+  Music,
+  ArrowLeft,
+  Edit,
   GripVertical,
   Plus,
   Trash2,
   Save,
-  X
+  X,
+  AlertTriangle,
+  ExternalLink
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -505,6 +507,31 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
   return (
     <div className="h-full bg-background/50 p-4 md:p-6">
       <div className="max-w-6xl mx-auto space-y-6">
+        {/* Deprecation notice: the cantoral is now maintained in the
+            mcmapp-cantoral repo (ChordPro sources + songs.json generator). */}
+        <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-warning">Sección deprecada</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                El cantoral ya no se gestiona desde este panel. Las canciones se mantienen
+                en formato ChordPro y el <code className="bg-muted px-1 py-0.5 rounded">songs.json</code> se
+                genera en el repositorio <span className="font-medium">mcmapp-cantoral</span>.
+              </p>
+            </div>
+          </div>
+          <a
+            href="https://github.com/mcmespana/mcmapp-cantoral"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 text-xs font-medium text-warning hover:bg-warning/20 transition-colors self-start sm:self-auto"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Abrir repositorio
+          </a>
+        </div>
+
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
             <Music className="w-8 h-8 text-primary" />
@@ -577,7 +604,7 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
                 <DialogTitle>Detalle del fallito</DialogTitle>
               </DialogHeader>
               <div className="space-y-3 text-sm">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div><span className="text-muted-foreground">Canción:</span> {openFallito.raw.songTitle || '-'}</div>
                   <div><span className="text-muted-foreground">Archivo:</span> {openFallito.raw.songFilename || '-'}</div>
                   <div><span className="text-muted-foreground">Plataforma:</span> {openFallito.raw.platform || '-'}</div>
@@ -732,7 +759,7 @@ function SolicitudesPanel({ data, onUpdate }: { data: any; onUpdate: (d: any) =>
               <DialogTitle>Detalle de la solicitud</DialogTitle>
             </DialogHeader>
             <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div><span className="text-muted-foreground">Título:</span> {current.title || '-'}</div>
                 <div><span className="text-muted-foreground">Autor:</span> {current.author || '-'}</div>
                 <div><span className="text-muted-foreground">Plataforma:</span> {current.platform || '-'}</div>

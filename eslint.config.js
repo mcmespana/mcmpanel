@@ -24,6 +24,10 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "@typescript-eslint/no-unused-vars": "off",
+      // The panel works against schema-less Firebase Realtime Database JSON and
+      // vendored shadcn-ui primitives, where `any` is pragmatic and pervasive.
+      // Keep it visible as a warning instead of a hard error.
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   }
 );

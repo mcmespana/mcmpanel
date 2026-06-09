@@ -11,19 +11,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
-  Database,
-  Images,
-  Calendar,
-  Music,
-  Gamepad2,
-  Trophy,
   Zap,
-  Bell,
-  Users,
-  Wifi,
-  WifiOff,
   Cloud,
-  CloudOff,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -32,6 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ActiveSection, JSONData } from "./JSONManager";
+import { SECTION_META, SECTION_ORDER, sectionHasData } from "@/lib/sections";
 
 interface AppSidebarProps {
   activeSection: ActiveSection;
@@ -44,56 +34,13 @@ interface AppSidebarProps {
   onToggleAppReviewMode: (next: boolean) => void;
 }
 
-const menuItems = [
-  {
-    id: 'app' as ActiveSection,
-    title: 'App',
-    icon: Database,
-    description: 'Feedback y config',
-  },
-  {
-    id: 'albums' as ActiveSection,
-    title: 'Albums',
-    icon: Images,
-    description: 'Gestión de álbumes',
-  },
-  {
-    id: 'calendars' as ActiveSection,
-    title: 'Calendars',
-    icon: Calendar,
-    description: 'Calendarios',
-  },
-  {
-    id: 'songs' as ActiveSection,
-    title: 'Cantoral',
-    icon: Music,
-    description: 'Canciones y repertorio',
-  },
-  {
-    id: 'wordle' as ActiveSection,
-    title: 'Wordle',
-    icon: Gamepad2,
-    description: 'Palabras diarias',
-  },
-  {
-    id: 'activities' as ActiveSection,
-    title: 'Actividades',
-    icon: Zap,
-    description: 'Gestión de actividades',
-  },
-  {
-    id: 'notifications' as ActiveSection,
-    title: 'Notificaciones',
-    icon: Bell,
-    description: 'Push notifications',
-  },
-  {
-    id: 'profileConfig' as ActiveSection,
-    title: 'Perfiles',
-    icon: Users,
-    description: 'Perfiles, delegaciones, sistema',
-  },
-];
+// "Inicio" first, then the rest of the sections in their canonical order.
+const menuItems = (['home', ...SECTION_ORDER] as ActiveSection[]).map((id) => ({
+  id,
+  title: SECTION_META[id].title,
+  icon: SECTION_META[id].icon,
+  description: SECTION_META[id].description,
+}));
 
 export function AppSidebar({
   activeSection,
@@ -126,24 +73,6 @@ export function AppSidebar({
     }
   };
 
-  const getSectionHasData = (sectionId: ActiveSection): boolean => {
-    if (sectionId === 'notifications') return true;
-    const sectionData = jsonData[sectionId as keyof JSONData];
-    if (!sectionData) return false;
-    if (sectionId === 'app') {
-      return Object.keys((sectionData as any).feedback || {}).length > 0;
-    }
-    if (sectionId === 'profileConfig') {
-      return !!(sectionData as any).data;
-    }
-    if ((sectionData as any).data) {
-      return Array.isArray((sectionData as any).data)
-        ? (sectionData as any).data.length > 0
-        : Object.keys((sectionData as any).data).length > 0;
-    }
-    return Object.keys(sectionData).length > 0;
-  };
-
   const SaveIcon = () => {
     if (saveStatus === 'saving') return <Loader2 className="w-3 h-3 animate-spin text-primary" />;
     if (saveStatus === 'saved' && !dirty) return <CheckCircle2 className="w-3 h-3 text-success" />;
@@ -162,11 +91,15 @@ export function AppSidebar({
 
   return (
     <Sidebar className="border-r border-border/40 bg-sidebar">
-      {/* Logo / Header */}
-      <div className={cn(
-        "flex items-center gap-2 px-4 py-4 border-b border-border/40",
-        collapsed && "justify-center px-2"
-      )}>
+      {/* Logo / Header — tap to go to the home dashboard */}
+      <button
+        type="button"
+        onClick={() => handleSectionChange('home')}
+        className={cn(
+          "flex items-center gap-2 px-4 py-4 border-b border-border/40 transition-colors hover:bg-muted/40 text-left",
+          collapsed && "justify-center px-2"
+        )}
+      >
         <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
           <Zap className="w-4 h-4 text-primary" />
         </div>
@@ -176,7 +109,7 @@ export function AppSidebar({
             <p className="text-xs text-muted-foreground mt-0.5">MCM App Admin</p>
           </div>
         )}
-      </div>
+      </button>
 
       {/* Quick toggle: App Review Mode */}
       <button
@@ -243,7 +176,7 @@ export function AppSidebar({
             <SidebarMenu className="space-y-0.5">
               {menuItems.map((item) => {
                 const isActive = activeSection === item.id;
-                const hasData = getSectionHasData(item.id);
+                const hasData = sectionHasData(jsonData, item.id);
 
                 return (
                   <SidebarMenuItem key={item.id}>
@@ -278,7 +211,7 @@ export function AppSidebar({
                             )}>
                               {item.title}
                             </span>
-                            {item.id !== 'notifications' && (
+                            {item.id !== 'notifications' && item.id !== 'home' && (
                               <span className={cn(
                                 "flex-shrink-0 w-1.5 h-1.5 rounded-full transition-colors",
                                 hasData ? "bg-success/70" : "bg-muted-foreground/25"
