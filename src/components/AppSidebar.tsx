@@ -211,7 +211,7 @@ export function AppSidebar({
                             )}>
                               {item.title}
                             </span>
-                            {item.id !== 'notifications' && item.id !== 'home' && (
+                            {item.id !== 'notifications' && item.id !== 'home' && item.id !== 'surveys' && (
                               <span className={cn(
                                 "flex-shrink-0 w-1.5 h-1.5 rounded-full transition-colors",
                                 hasData ? "bg-success/70" : "bg-muted-foreground/25"
