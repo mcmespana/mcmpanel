@@ -28,10 +28,22 @@ export interface PanelUser {
   providers: AuthProvider[];
   /** Epoch millis if we could parse a creation timestamp, else null. */
   createdAt: number | null;
-  /** Epoch millis of last sign-in if available, else null. */
+  /** Epoch millis of last sign-in / activity if available, else null. */
   lastLogin: number | null;
+  /** MCM profile type (e.g. "monitor"), from `mcm.profileType`. */
+  profileType: string | null;
+  /** MCM delegation id (e.g. "madrid"), from `mcm.delegationId`. */
+  delegationId: string | null;
   /** The raw node, kept around for the "ver datos" debug view. */
   raw: Record<string, unknown>;
+}
+
+/** Read a value from `obj` or from a nested object under `obj[nestedKey]`. */
+function nested(obj: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const value = obj[key];
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function pickString(obj: Record<string, unknown>, keys: string[]): string | null {
@@ -119,6 +131,11 @@ export function parseUser(uid: string, raw: unknown): PanelUser {
   const node: Record<string, unknown> =
     raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
 
+  // Timestamps and profile info can live at the top level or nested under
+  // `meta` / `mcm` (the shape used by the MCM app).
+  const meta = nested(node, 'meta') ?? {};
+  const mcm = nested(node, 'mcm') ?? {};
+
   return {
     uid,
     email: pickString(node, ['email', 'mail', 'correo']),
@@ -126,8 +143,14 @@ export function parseUser(uid: string, raw: unknown): PanelUser {
     photoURL: pickString(node, ['photoURL', 'photoUrl', 'photo', 'avatar', 'picture']),
     isAdmin: node.isAdmin === true,
     providers: detectProviders(node),
-    createdAt: parseTimestampFrom(node, ['createdAt', 'creationTime', 'created', 'metadata.creationTime']),
-    lastLogin: parseTimestampFrom(node, ['lastLogin', 'lastLoginAt', 'lastSignInTime', 'lastSeen']),
+    createdAt:
+      parseTimestampFrom(node, ['createdAt', 'creationTime', 'created']) ??
+      parseTimestampFrom(meta, ['createdAt', 'creationTime', 'created']),
+    lastLogin:
+      parseTimestampFrom(node, ['lastLogin', 'lastLoginAt', 'lastSignInTime', 'lastSeen', 'lastSeenAt']) ??
+      parseTimestampFrom(meta, ['lastSeenAt', 'lastSeen', 'lastLogin', 'lastLoginAt', 'lastSignInTime']),
+    profileType: pickString(mcm, ['profileType', 'profile', 'type']),
+    delegationId: pickString(mcm, ['delegationId', 'delegation', 'delegacion']),
     raw: node,
   };
 }

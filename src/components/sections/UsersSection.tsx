@@ -77,6 +77,8 @@ export function UsersSection() {
       return (
         (u.email && u.email.toLowerCase().includes(q)) ||
         (u.name && u.name.toLowerCase().includes(q)) ||
+        (u.profileType && u.profileType.toLowerCase().includes(q)) ||
+        (u.delegationId && u.delegationId.toLowerCase().includes(q)) ||
         u.uid.toLowerCase().includes(q)
       );
     });
@@ -267,6 +269,14 @@ function UserRow({
                 {PROVIDER_META[p].label}
               </Badge>
             ))}
+            {user.profileType && (
+              <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-normal capitalize">
+                {user.profileType}
+              </Badge>
+            )}
+            {user.delegationId && (
+              <span className="hidden capitalize sm:inline">· {user.delegationId}</span>
+            )}
             {user.lastLogin !== null && (
               <span className="hidden sm:inline">· últ. acceso {formatUserDate(user.lastLogin)}</span>
             )}
@@ -331,6 +341,8 @@ function UserInspectDialog({ user, onClose }: { user: PanelUser | null; onClose:
                   )}
                 </div>
               </div>
+              {user.profileType && <InspectRow label="Perfil" value={user.profileType} />}
+              {user.delegationId && <InspectRow label="Delegación" value={user.delegationId} />}
               <InspectRow label="Alta" value={formatUserDate(user.createdAt)} />
               <InspectRow label="Último acceso" value={formatUserDate(user.lastLogin)} />
               <div>
