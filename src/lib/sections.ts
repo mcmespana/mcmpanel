@@ -9,6 +9,7 @@ import {
   Zap,
   Bell,
   Users,
+  UserCog,
   ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ export type SectionId =
   | 'activities'
   | 'notifications'
   | 'surveys'
+  | 'users'
   | 'profileConfig';
 
 export interface SectionMeta {
@@ -106,6 +108,13 @@ export const SECTION_META: Record<SectionId, SectionMeta> = {
     slug: 'actividades',
     icon: Zap,
   },
+  users: {
+    id: 'users',
+    title: 'Usuarios',
+    description: 'Administradores y cuentas',
+    slug: 'usuarios',
+    icon: UserCog,
+  },
   profileConfig: {
     id: 'profileConfig',
     title: 'Perfiles',
@@ -125,6 +134,7 @@ export const SECTION_ORDER: SectionId[] = [
   'activities',
   'notifications',
   'surveys',
+  'users',
   'profileConfig',
 ];
 
@@ -154,7 +164,7 @@ export function sectionForPath(pathname: string): SectionId {
  * stored blob (it acts on a live queue), so it always counts as present.
  */
 export function sectionHasData(jsonData: JSONData, id: SectionId): boolean {
-  if (id === 'notifications' || id === 'home' || id === 'surveys') return true;
+  if (id === 'notifications' || id === 'home' || id === 'surveys' || id === 'users') return true;
   const value = jsonData[id as keyof JSONData] as unknown;
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;

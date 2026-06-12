@@ -12,6 +12,7 @@ import { WordleSection } from './sections/WordleSection';
 import { ActivitiesSection } from './sections/ActivitiesSection';
 import { NotificationsSection } from './sections/NotificationsSection';
 import { SurveysSection } from './sections/SurveysSection';
+import { UsersSection } from './sections/UsersSection';
 import { ProfileConfigSection } from './sections/ProfileConfigSection';
 import type { ProfileConfigDocument } from '@/types/profileConfig';
 import { SEED_PROFILE_CONFIG } from '@/lib/profileConfigSeed';
@@ -278,6 +279,8 @@ export function JSONManager() {
         return <NotificationsSection />;
       case 'surveys':
         return <SurveysSection />;
+      case 'users':
+        return <UsersSection />;
       case 'profileConfig':
         return (
           <ProfileConfigSection
