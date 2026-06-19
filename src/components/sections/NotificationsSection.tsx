@@ -113,15 +113,25 @@ const PROFILE_OPTIONS: { id: ProfileType; label: string }[] = [
   { id: 'miembro', label: 'Miembros' },
 ];
 
-// Eventos conocidos a los que el usuario puede suscribirse (topic "event-<id>").
-// Lista manual ampliable; el <id> coincide con el slug del evento en la app
-// (nodo Firebase: "jubileo", o activities/<nombre>). Además se permite teclear
-// un id personalizado para eventos nuevos sin tocar el código.
-const EVENT_OPTIONS: { id: string; label: string }[] = [
-  { id: 'jubileo', label: 'Jubileo 2025' },
-];
+// Eventos a los que el usuario puede suscribirse (topic "event-<id>", donde
+// <id> es el slug del evento en la app). La lista del desplegable se DESCUBRE
+// automáticamente de los topics "event-*" presentes en /pushTokens, así que
+// cualquier evento nuevo aparece solo en cuanto alguien se suscribe. Estas
+// etiquetas solo dan un nombre bonito; un id sin etiqueta se muestra tal cual.
+// KNOWN_EVENT_IDS garantiza que estos se vean aunque aún no tengan suscriptores.
+// Además se permite teclear un id manual para casos puntuales.
+const EVENT_LABELS: Record<string, string> = {
+  jubileo: 'Jubileo 2025',
+  visitapapa: 'Visita del Papa',
+};
+const KNOWN_EVENT_IDS = Object.keys(EVENT_LABELS);
+const EVENT_TOPIC_PREFIX = 'event-';
 const EVENT_NONE = '__none';
 const EVENT_CUSTOM = '__custom';
+
+function eventLabelFor(id: string): string {
+  return EVENT_LABELS[id] ?? id;
+}
 
 const MAX_TITLE = 50;
 const MAX_BODY = 200;
@@ -446,10 +456,27 @@ export function NotificationsSection() {
     (id: string) => delegations.find((d) => d.id === id)?.label ?? id,
     [delegations],
   );
-  const eventLabel = useCallback(
-    (id: string) => EVENT_OPTIONS.find((e) => e.id === id)?.label ?? id,
-    [],
-  );
+  const eventLabel = useCallback((id: string) => eventLabelFor(id), []);
+
+  // Descubre los eventos (topic "event-<id>") presentes en /pushTokens y cuenta
+  // suscriptores por evento. Une los descubiertos con KNOWN_EVENT_IDS (para que
+  // se vean aunque tengan 0 suscriptores) y los ordena por nº de suscriptores.
+  const eventOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const id of KNOWN_EVENT_IDS) counts.set(id, 0);
+    for (const t of tokens) {
+      const topics = Array.isArray(t?.topics) ? t.topics : [];
+      for (const top of topics) {
+        if (typeof top === 'string' && top.startsWith(EVENT_TOPIC_PREFIX)) {
+          const id = top.slice(EVENT_TOPIC_PREFIX.length);
+          if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+      }
+    }
+    return [...counts.entries()]
+      .map(([id, count]) => ({ id, label: eventLabelFor(id), count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [tokens]);
 
   // Recalcula a partir del snapshot de /pushTokens cada vez que cambia el filtro.
   const recipients = useMemo(() => {
@@ -484,9 +511,10 @@ export function NotificationsSection() {
     }));
   };
 
-  // Estado del selector de evento: id real, "ninguno", o "personalizado".
+  // Estado del selector de evento: id real (descubierto/conocido), "ninguno", o
+  // "personalizado" (id tecleado a mano que aún no aparece en la lista).
   const eventSelectValue = form.audEventId
-    ? EVENT_OPTIONS.some((e) => e.id === form.audEventId)
+    ? eventOptions.some((e) => e.id === form.audEventId)
       ? form.audEventId
       : EVENT_CUSTOM
     : EVENT_NONE;
@@ -1199,8 +1227,11 @@ export function NotificationsSection() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={EVENT_NONE}>Sin filtro de evento</SelectItem>
-                          {EVENT_OPTIONS.map((e) => (
-                            <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                          {eventOptions.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.label}
+                              <span className="text-muted-foreground"> · {e.count} suscrito{e.count === 1 ? '' : 's'}</span>
+                            </SelectItem>
                           ))}
                           <SelectSeparator />
                           <SelectItem value={EVENT_CUSTOM}>Otro evento (id manual)…</SelectItem>
