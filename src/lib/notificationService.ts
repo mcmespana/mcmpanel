@@ -1,4 +1,5 @@
 import { get, ref, type Database } from 'firebase/database';
+import type { AudienceFilter } from '@/lib/audience';
 
 const API_BASE = '/api/notifications';
 
@@ -23,8 +24,9 @@ export interface SendNotificationRequest {
   internalRoute?: string;
   // Formato canónico: hasta 3 botones de acción in-app.
   actionButtons?: ActionButton[];
-  // Segmentación por "topics" (la app guarda un array topics[] por token).
-  // Si se envían varios, el token debe contenerlos TODOS (AND). Vacío = a todos.
+  // Segmentación canónica: 4 ejes (todos/perfiles/delegaciones/evento) + AND/OR.
+  audience?: AudienceFilter | null;
+  // Legacy: segmentación plana por "topics" (AND). Vacío = a todos.
   topics?: string[];
 }
 
@@ -71,6 +73,7 @@ export interface ScheduledNotification {
   actionButtons?: ActionButton[] | null;
   // Legacy single-button field on records created before the multi-button change.
   actionButton?: ActionButton | null;
+  audience?: AudienceFilter | null;
   topics?: string[];
   scheduledFor: string;
   status: 'scheduled' | 'processing' | 'sent' | 'cancelled' | 'failed';
@@ -93,6 +96,7 @@ export interface NotificationRecord {
   actionButtons?: ActionButton[] | null;
   // Legacy single-button field on records created before the multi-button change.
   actionButton?: ActionButton | null;
+  audience?: AudienceFilter | null;
   topics: string[];
   status: string;
   createdAt: string;

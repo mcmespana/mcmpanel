@@ -74,6 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // before this change (normalizeActionButtons merges both).
           actionButtons: item.actionButtons,
           actionButton: item.actionButton,
+          audience: item.audience,
           topics: item.topics,
         };
 

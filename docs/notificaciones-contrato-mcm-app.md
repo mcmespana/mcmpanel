@@ -73,17 +73,40 @@ funcionen, cada token debe guardarse así:
 
 ```jsonc
 "/pushTokens/<deviceKey>": {
-  "token": "ExponentPushToken[...]",  // obligatorio
+  "token": "ExponentPushToken[...]",        // obligatorio
   "platform": "ios" | "android" | "web",
   "lastActive": "2026-06-02T10:00:00.000Z", // ISO; alimenta activos 24h/7d
-  "userType": "joven" | "responsable" | ...,// para filtro "Tipo de perfil"
-  "delegacion": "Castellón" | "Madrid" | ... // para filtro "Delegación"
+  "profileType": "familia" | "monitor" | "miembro" | null,      // eje "perfil"
+  "delegationId": "mcm-castellon" | "mcm-madrid" | ... | null,  // eje "delegación"
+  "topics": ["general", "eventos", "familias", "mcm-madrid", "event-jubileo"]
 }
 ```
 
-> El panel **filtra del lado servidor**: `recipientType` se compara con
-> `userType` y `delegacion` con `delegacion`. Si la app no guarda esos campos,
-> la segmentación no puede funcionar (llega a todos).
+> El panel **filtra del lado servidor** combinando hasta 4 ejes (ver abajo). Si
+> la app no guarda `profileType`/`delegationId`/`topics`, esos ejes no pueden
+> funcionar (el token no entra en el segmento). Los dispositivos sin
+> `profileType` (saltaron el onboarding) se cuentan, y el panel avisa de ellos.
+
+## Segmentación de destinatarios (4 ejes + AND/OR)
+
+El composer combina hasta cuatro ejes **opcionales**. Dentro de un eje el
+criterio es OR; entre ejes distintos se aplica el conmutador `match`
+(`all` = AND, por defecto; `any` = OR). El backend evalúa cada token así:
+
+| Eje | Activo cuando | Criterio sobre el token |
+|-----|---------------|-------------------------|
+| Todos | `audience.todos === true` | `topics` incluye `"general"` |
+| Perfil | `audience.perfiles.length > 0` | `profileType ∈ perfiles` |
+| Delegación | `audience.delegaciones.length > 0` | `delegationId ∈ delegaciones` |
+| Evento | `audience.eventId != null` | `topics` incluye `"event-<eventId>"` |
+
+> Para avisar de **un evento concreto** (Jubileo, un encuentro…) se segmenta por
+> el topic `event-<id>` (suscripción opt-in), **no** por `"eventos"`/`"general"`,
+> que los tienen todos y llegarían a todo el mundo.
+
+El filtro usado se guarda en `/notifications/<id>.audience` (y en
+`/scheduledNotifications/<id>.audience` para los programados), incluido el modo
+`match`. Sin ningún eje activo, la notificación va a **todos**.
 
 ## Campos que dependen de soporte en la app
 

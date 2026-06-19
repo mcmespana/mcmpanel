@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Send, Bell, Users, Target, Smartphone, Clock,
   CheckCircle, Trash2, BarChart3, AlertTriangle,
@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -33,8 +35,16 @@ import {
   type ScheduledNotification,
   type ActionButton,
 } from '@/lib/notificationService';
+import {
+  type AudienceFilter,
+  type AudienceMatch,
+  type SegmentTokenRecord,
+  audienceHasAxis,
+  tokenMatchesAudience,
+  summarizeAudience,
+} from '@/lib/audience';
+import type { ProfileType, DelegationListItem } from '@/types/profileConfig';
 
-const ALL = '__all';
 // Default tap behaviour: send NO internalRoute so the app opens THIS notification
 // expanded ("en grande") inside the notification center, matching data.id against
 // its /notifications/<id> entry in Firebase.
@@ -92,32 +102,26 @@ const ROUTE_GROUPS: { label: string; routes: { id: string; label: string }[] }[]
   },
 ];
 
-// Segmentación por "topics". Un perfil aporta familias/monitores/miembros y la
-// delegación aporta su topic mcm-*. Filtrar por ambos = AND (familias de Madrid).
-const PROFILE_TOPICS = [
-  { topic: 'familias', label: 'Familias' },
-  { topic: 'monitores', label: 'Monitores' },
-  { topic: 'miembros', label: 'Miembros' },
+// ─── Segmentación de destinatarios ─────────────────────────────────────────--
+// Los perfiles se filtran por token.profileType (no por topic). Las delegaciones
+// se pueblan en vivo desde /profileConfig/data/delegationList y filtran por
+// token.delegationId. Los eventos filtran por el topic opt-in "event-<id>".
+
+const PROFILE_OPTIONS: { id: ProfileType; label: string }[] = [
+  { id: 'familia', label: 'Familias' },
+  { id: 'monitor', label: 'Monitores' },
+  { id: 'miembro', label: 'Miembros' },
 ];
 
-const DELEGATION_TOPICS = [
-  { topic: 'mcm-espana', label: 'MCM España' },
-  { topic: 'mcm-benicarlo-vinaros', label: 'Benicarló-Vinaròs' },
-  { topic: 'mcm-burriana', label: 'Burriana' },
-  { topic: 'mcm-caravaca', label: 'Caravaca' },
-  { topic: 'mcm-castellon', label: 'Castellón' },
-  { topic: 'mcm-espinardo', label: 'Espinardo' },
-  { topic: 'mcm-granada', label: 'Granada' },
-  { topic: 'mcm-lalcora', label: "L'Alcora" },
-  { topic: 'mcm-madrid', label: 'Madrid' },
-  { topic: 'mcm-nules', label: 'Nules' },
-  { topic: 'mcm-onda', label: 'Onda' },
-  { topic: 'mcm-quintanar', label: 'Quintanar' },
-  { topic: 'mcm-vila-real', label: 'Vila-real' },
-  { topic: 'mcm-villacanas', label: 'Villacañas' },
-  { topic: 'mcm-zaragoza', label: 'Zaragoza' },
-  { topic: 'internacional', label: 'Internacional' },
+// Eventos conocidos a los que el usuario puede suscribirse (topic "event-<id>").
+// Lista manual ampliable; el <id> coincide con el slug del evento en la app
+// (nodo Firebase: "jubileo", o activities/<nombre>). Además se permite teclear
+// un id personalizado para eventos nuevos sin tocar el código.
+const EVENT_OPTIONS: { id: string; label: string }[] = [
+  { id: 'jubileo', label: 'Jubileo 2025' },
 ];
+const EVENT_NONE = '__none';
+const EVENT_CUSTOM = '__custom';
 
 const MAX_TITLE = 50;
 const MAX_BODY = 200;
@@ -156,9 +160,13 @@ interface FormState {
   customRoute: string;   // free-text deep link when routeChoice === CUSTOM_ROUTE
   // Up to MAX_ACTION_BUTTONS in-app action buttons (canonical `actionButtons`).
   actionButtons: ActionButtonForm[];
-  // Segmentation by topic (AND). ALL = no filter on that axis.
-  profileTopic: string;
-  delegationTopic: string;
+  // ─── Audiencia (4 ejes combinables) ───
+  // Cómo combinar los ejes entre sí: 'all' = AND (por defecto), 'any' = OR.
+  audienceMatch: AudienceMatch;
+  audTodos: boolean;          // eje "todos" (topic general)
+  audPerfiles: ProfileType[]; // eje perfil
+  audDelegaciones: string[];  // eje delegación (delegationId)
+  audEventId: string;         // eje evento ('' = inactivo)
 }
 
 const emptyForm: FormState = {
@@ -173,8 +181,12 @@ const emptyForm: FormState = {
   routeChoice: DETAIL,
   customRoute: '',
   actionButtons: [],
-  profileTopic: ALL,
-  delegationTopic: ALL,
+  // Por defecto: a todos los onboarded (topic general), combinando con AND.
+  audienceMatch: 'all',
+  audTodos: true,
+  audPerfiles: [],
+  audDelegaciones: [],
+  audEventId: '',
 };
 
 // Resolves the internalRoute sent in the Expo payload (data.internalRoute).
@@ -193,11 +205,15 @@ function describeTapAction(form: FormState): string {
   return route;
 }
 
-function resolveTopics(form: FormState): string[] {
-  const topics: string[] = [];
-  if (form.profileTopic !== ALL) topics.push(form.profileTopic);
-  if (form.delegationTopic !== ALL) topics.push(form.delegationTopic);
-  return topics;
+// Builds the canonical AudienceFilter from the form's individual axis fields.
+function resolveAudience(form: FormState): AudienceFilter {
+  return {
+    match: form.audienceMatch,
+    todos: form.audTodos,
+    perfiles: form.audPerfiles,
+    delegaciones: form.audDelegaciones,
+    eventId: form.audEventId.trim() || null,
+  };
 }
 
 // Rows with no url are ignored. Returns the cleaned list (capped to the max) to
@@ -288,6 +304,10 @@ export function NotificationsSection() {
   const [scheduleMode, setScheduleMode] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
   const [scheduled, setScheduled] = useState<ScheduledNotification[]>([]);
+  // Segmentation: live snapshot of /pushTokens (for the recipient preview count)
+  // and the delegation list (from /profileConfig) that populates the multiselect.
+  const [tokens, setTokens] = useState<SegmentTokenRecord[]>([]);
+  const [delegations, setDelegations] = useState<DelegationListItem[]>([]);
   const { toast } = useToast();
 
   // Active tab is mirrored in the URL (?tab=compose) so the home dashboard can
@@ -337,6 +357,32 @@ export function NotificationsSection() {
       } else {
         setScheduled([]);
       }
+    });
+    return () => unsub();
+  }, []);
+
+  // Live snapshot of all push tokens, for the recipient preview count.
+  useEffect(() => {
+    const db = getDB();
+    const tokensRef = ref(db, '/pushTokens');
+    const unsub = onValue(tokensRef, (snap) => {
+      const val = snap.val();
+      if (val && typeof val === 'object') {
+        setTokens(Object.values(val) as SegmentTokenRecord[]);
+      } else {
+        setTokens([]);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Delegation list that feeds the multiselect (id + label), from profileConfig.
+  useEffect(() => {
+    const db = getDB();
+    const delRef = ref(db, '/profileConfig/data/delegationList');
+    const unsub = onValue(delRef, (snap) => {
+      const val = snap.val();
+      setDelegations(Array.isArray(val) ? (val as DelegationListItem[]) : []);
     });
     return () => unsub();
   }, []);
@@ -391,7 +437,60 @@ export function NotificationsSection() {
     }));
   };
 
-  const segmented = form.profileTopic !== ALL || form.delegationTopic !== ALL;
+  // ─── Audiencia derivada + preview de recuento (en vivo) ───────────────────
+  const audience = useMemo(() => resolveAudience(form), [form]);
+  const segmented = audienceHasAxis(audience);
+
+  // Map id→label de delegaciones, para el resumen legible.
+  const delegationLabel = useCallback(
+    (id: string) => delegations.find((d) => d.id === id)?.label ?? id,
+    [delegations],
+  );
+  const eventLabel = useCallback(
+    (id: string) => EVENT_OPTIONS.find((e) => e.id === id)?.label ?? id,
+    [],
+  );
+
+  // Recalcula a partir del snapshot de /pushTokens cada vez que cambia el filtro.
+  const recipients = useMemo(() => {
+    const onlyValid = tokens.filter(
+      (t) => typeof t?.token === 'string' && t.token.startsWith('ExponentPushToken['),
+    );
+    const matched = onlyValid.filter((t) => tokenMatchesAudience(t, audience));
+    const nullProfile = matched.filter((t) => !t.profileType).length;
+    return { total: onlyValid.length, count: matched.length, nullProfile };
+  }, [tokens, audience]);
+
+  const audienceSummary = useMemo(
+    () => summarizeAudience(segmented ? audience : null, { delegationLabel, eventLabel }),
+    [audience, segmented, delegationLabel, eventLabel],
+  );
+
+  const togglePerfil = (perfil: ProfileType) => {
+    setForm((prev) => ({
+      ...prev,
+      audPerfiles: prev.audPerfiles.includes(perfil)
+        ? prev.audPerfiles.filter((p) => p !== perfil)
+        : [...prev.audPerfiles, perfil],
+    }));
+  };
+
+  const toggleDelegacion = (id: string) => {
+    setForm((prev) => ({
+      ...prev,
+      audDelegaciones: prev.audDelegaciones.includes(id)
+        ? prev.audDelegaciones.filter((d) => d !== id)
+        : [...prev.audDelegaciones, id],
+    }));
+  };
+
+  // Estado del selector de evento: id real, "ninguno", o "personalizado".
+  const eventSelectValue = form.audEventId
+    ? EVENT_OPTIONS.some((e) => e.id === form.audEventId)
+      ? form.audEventId
+      : EVENT_CUSTOM
+    : EVENT_NONE;
+  const [eventCustomMode, setEventCustomMode] = useState(false);
 
   const handleSend = async () => {
     if (!form.title.trim()) {
@@ -423,7 +522,7 @@ export function NotificationsSection() {
       imageUrl: form.imageUrl || undefined,
       internalRoute: resolveRoute(form),
       actionButtons: actionButtons.length ? actionButtons : undefined,
-      topics: segmented ? resolveTopics(form) : undefined,
+      audience: segmented ? audience : undefined,
     };
 
     // ─── Scheduled send ───────────────────────────────────────────────
@@ -949,47 +1048,200 @@ export function NotificationsSection() {
                     )}
                   </div>
 
-                  {/* Recipient segmentation by topic */}
-                  <div className="p-4 bg-muted/10 rounded-lg border border-border/30 space-y-3">
-                    <p className="text-sm font-medium text-muted-foreground flex items-center">
-                      <Users className="w-4 h-4 mr-2" />
-                      Segmentación (opcional)
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Tipo de perfil</Label>
-                        <Select value={form.profileTopic} onValueChange={(v) => updateForm('profileTopic', v)}>
-                          <SelectTrigger className="bg-input border-border/50">
-                            <SelectValue placeholder="Todos" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={ALL}>Todos los perfiles</SelectItem>
-                            {PROFILE_TOPICS.map((p) => (
-                              <SelectItem key={p.topic} value={p.topic}>{p.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Delegación local</Label>
-                        <Select value={form.delegationTopic} onValueChange={(v) => updateForm('delegationTopic', v)}>
-                          <SelectTrigger className="bg-input border-border/50">
-                            <SelectValue placeholder="Todas" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={ALL}>Todas las delegaciones</SelectItem>
-                            {DELEGATION_TOPICS.map((d) => (
-                              <SelectItem key={d.topic} value={d.topic}>{d.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                  {/* Recipient segmentation (4 combinable axes + AND/OR) */}
+                  <div className="p-4 bg-muted/10 rounded-lg border border-border/30 space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-muted-foreground flex items-center">
+                        <Users className="w-4 h-4 mr-2" />
+                        Destinatarios
+                      </p>
+                      {/* Live recipient count */}
+                      <Badge
+                        variant={recipients.count === 0 ? 'destructive' : 'secondary'}
+                        className="flex items-center gap-1"
+                      >
+                        <Megaphone className="w-3 h-3" />
+                        ≈ {recipients.count} dispositivo{recipients.count === 1 ? '' : 's'}
+                      </Badge>
+                    </div>
+
+                    {/* AND/OR match toggle (only matters with 2+ active axes) */}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md bg-background/40 border border-border/30 p-2.5">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Coincidir
+                      </Label>
+                      <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/40 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => updateForm('audienceMatch', 'all')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            form.audienceMatch === 'all'
+                              ? 'bg-primary text-primary-foreground font-medium'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          Todas (Y)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateForm('audienceMatch', 'any')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            form.audienceMatch === 'any'
+                              ? 'bg-primary text-primary-foreground font-medium'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          Cualquiera (O)
+                        </button>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {segmented
-                        ? 'Solo recibirán los dispositivos que cumplan TODOS los filtros seleccionados (los que tengan los topics en su perfil).'
-                        : 'Sin filtros: la notificación llega a TODOS los dispositivos.'}
-                    </p>
+
+                    {/* Eje: Todos */}
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <Checkbox
+                        checked={form.audTodos}
+                        onCheckedChange={(v) => updateForm('audTodos', v === true)}
+                        className="mt-0.5"
+                      />
+                      <span className="space-y-0.5">
+                        <span className="block text-sm font-medium">Todos los onboarded</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Dispositivos con el topic «general» (avisos transversales).
+                        </span>
+                      </span>
+                    </label>
+
+                    {/* Eje: Perfil */}
+                    <div className="space-y-2">
+                      <Label className="text-xs">Por perfil</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {PROFILE_OPTIONS.map((p) => {
+                          const active = form.audPerfiles.includes(p.id);
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => togglePerfil(p.id)}
+                              className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                                active
+                                  ? 'bg-primary text-primary-foreground border-primary'
+                                  : 'bg-background/40 border-border/50 text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Eje: Delegación */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Por delegación</Label>
+                        {form.audDelegaciones.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setForm((prev) => ({ ...prev, audDelegaciones: [] }))}
+                            className="text-[11px] text-muted-foreground hover:text-foreground"
+                          >
+                            Limpiar ({form.audDelegaciones.length})
+                          </button>
+                        )}
+                      </div>
+                      {delegations.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          No hay delegaciones configuradas (en Perfiles → delegationList).
+                        </p>
+                      ) : (
+                        <ScrollArea className="h-32 rounded-md border border-border/30 bg-background/40 p-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {delegations.map((d) => {
+                              const active = form.audDelegaciones.includes(d.id);
+                              return (
+                                <label
+                                  key={d.id}
+                                  className="flex items-center gap-2 cursor-pointer text-sm px-1 py-0.5 rounded hover:bg-muted/30"
+                                >
+                                  <Checkbox
+                                    checked={active}
+                                    onCheckedChange={() => toggleDelegacion(d.id)}
+                                  />
+                                  <span className="truncate">{d.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </ScrollArea>
+                      )}
+                    </div>
+
+                    {/* Eje: Evento (topic event-<id>, suscripción opt-in) */}
+                    <div className="space-y-2">
+                      <Label className="text-xs">Por evento (suscritos)</Label>
+                      <Select
+                        value={eventSelectValue}
+                        onValueChange={(v) => {
+                          if (v === EVENT_NONE) {
+                            setEventCustomMode(false);
+                            updateForm('audEventId', '');
+                          } else if (v === EVENT_CUSTOM) {
+                            setEventCustomMode(true);
+                            updateForm('audEventId', '');
+                          } else {
+                            setEventCustomMode(false);
+                            updateForm('audEventId', v);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="bg-input border-border/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={EVENT_NONE}>Sin filtro de evento</SelectItem>
+                          {EVENT_OPTIONS.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                          ))}
+                          <SelectSeparator />
+                          <SelectItem value={EVENT_CUSTOM}>Otro evento (id manual)…</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {(eventCustomMode || eventSelectValue === EVENT_CUSTOM) && (
+                        <Input
+                          placeholder="id del evento (p. ej. evento2027)"
+                          value={form.audEventId}
+                          onChange={(e) => updateForm('audEventId', e.target.value.trim())}
+                          className="bg-input border-border/50 font-mono text-xs"
+                        />
+                      )}
+                      {form.audEventId && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Topic: <code className="bg-muted px-1 rounded">event-{form.audEventId}</code>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Resumen + avisos */}
+                    <div className="text-xs text-muted-foreground space-y-1 pt-1 border-t border-border/30">
+                      <p>
+                        {segmented ? (
+                          <>Llega a <strong>{audienceSummary}</strong> · ≈ {recipients.count} de {recipients.total} dispositivos.</>
+                        ) : (
+                          <>Sin filtros: la notificación llega a <strong>TODOS</strong> los dispositivos ({recipients.total}).</>
+                        )}
+                      </p>
+                      {recipients.count === 0 && (
+                        <p className="text-destructive">
+                          Ningún dispositivo cumple el filtro: revisa los ejes o el modo Y/O.
+                        </p>
+                      )}
+                      {recipients.nullProfile > 0 && (
+                        <p className="text-yellow-500 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                          {recipients.nullProfile} sin perfil (saltaron el onboarding) entran en el recuento.
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Scheduling */}
@@ -1030,7 +1282,13 @@ export function NotificationsSection() {
                     onClick={handleSend}
                     className="w-full tech-glow relative overflow-hidden group"
                     size="lg"
-                    disabled={sending || !form.title.trim() || !form.body.trim() || (scheduleMode && !scheduledFor)}
+                    disabled={
+                      sending ||
+                      !form.title.trim() ||
+                      !form.body.trim() ||
+                      (scheduleMode && !scheduledFor) ||
+                      (segmented && recipients.count === 0)
+                    }
                   >
                     {sending ? (
                       <>
@@ -1040,12 +1298,12 @@ export function NotificationsSection() {
                     ) : scheduleMode ? (
                       <>
                         <CalendarClock className="w-4 h-4 mr-2" />
-                        {segmented ? 'Programar para segmento' : 'Programar para todos'}
+                        {segmented ? `Programar para ≈ ${recipients.count}` : 'Programar para todos'}
                       </>
                     ) : (
                       <>
                         <Send className="w-4 h-4 mr-2" />
-                        {segmented ? 'Enviar a segmento' : 'Enviar a todos'}
+                        {segmented ? `Enviar a ≈ ${recipients.count} dispositivos` : 'Enviar a todos'}
                       </>
                     )}
                   </Button>
@@ -1156,15 +1414,19 @@ export function NotificationsSection() {
                   </div>
                   <div className="flex justify-between gap-2">
                     <span className="text-muted-foreground flex-shrink-0">Destinatarios:</span>
-                    <span className="text-right flex items-center gap-1">
+                    <span className="text-right">
                       {segmented ? (
-                        resolveTopics(form).map((t) => (
-                          <code key={t} className="text-[10px] bg-muted px-1 py-0.5 rounded">{t}</code>
-                        ))
+                        <span className="text-xs">{audienceSummary}</span>
                       ) : (
-                        <span className="flex items-center gap-1"><Megaphone className="w-3 h-3" /> Todos</span>
+                        <span className="flex items-center justify-end gap-1"><Megaphone className="w-3 h-3" /> Todos</span>
                       )}
                     </span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground flex-shrink-0">Alcance:</span>
+                    <Badge variant={recipients.count === 0 && segmented ? 'destructive' : 'secondary'}>
+                      ≈ {segmented ? recipients.count : recipients.total} dispositivos
+                    </Badge>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Botones:</span>
@@ -1224,9 +1486,11 @@ export function NotificationsSection() {
                           </div>
                           <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
                             <Badge variant="outline" className="text-[10px]">{item.category}</Badge>
-                            {item.topics && item.topics.length > 0 ? (
+                            {item.audience || (item.topics && item.topics.length > 0) ? (
                               <Badge variant="outline" className="text-[10px]">
-                                {item.topics.join(' · ')}
+                                {item.audience
+                                  ? summarizeAudience(item.audience, { delegationLabel, eventLabel })
+                                  : item.topics!.join(' · ')}
                               </Badge>
                             ) : (
                               <Badge variant="outline" className="text-[10px] flex items-center gap-1">
@@ -1312,11 +1576,15 @@ export function NotificationsSection() {
                         </div>
                         <div className="flex flex-wrap gap-2 mt-2 text-xs text-muted-foreground">
                           <Badge variant="outline" className="text-[10px]">{notif.category}</Badge>
-                          {notif.topics && notif.topics.length > 0 && (
+                          {notif.audience ? (
+                            <Badge variant="outline" className="text-[10px]">
+                              {summarizeAudience(notif.audience, { delegationLabel, eventLabel })}
+                            </Badge>
+                          ) : notif.topics && notif.topics.length > 0 ? (
                             <Badge variant="outline" className="text-[10px]">
                               {notif.topics.join(' · ')}
                             </Badge>
-                          )}
+                          ) : null}
                           {notif.sentAt && (
                             <span>
                               {new Date(notif.sentAt).toLocaleString('es-ES', {

@@ -71,8 +71,59 @@ export interface PushTokenRecord {
   token: string;
   platform?: 'ios' | 'android' | 'web';
   lastActive?: string;
-  // Segmentation: the app stores a pre-computed union of profile + delegation topics.
+  // Segmentation fields written by the app per device.
+  profileType?: 'familia' | 'monitor' | 'miembro' | null;
+  delegationId?: string | null;
+  // Pre-computed union of profile + delegation topics + subscribed "event-<id>".
   topics?: string[];
+}
+
+// ─── Audience segmentation ─────────────────────────────────────────────────--
+//
+// Mirror of src/lib/audience.ts (client). Keep both in sync: a send combines up
+// to four optional axes (todos / perfiles / delegaciones / eventId). Within an
+// axis the match is OR; between axes it's `match` ('all' = AND, 'any' = OR). An
+// axis with no selection doesn't count; no active axis at all = send to everyone.
+
+export type AudienceMatch = 'all' | 'any';
+
+export interface AudienceFilter {
+  match: AudienceMatch;
+  todos: boolean;
+  perfiles: string[];
+  delegaciones: string[];
+  eventId: string | null;
+}
+
+function audienceHasAxis(a: AudienceFilter): boolean {
+  return a.todos || a.perfiles.length > 0 || a.delegaciones.length > 0 || !!a.eventId;
+}
+
+// Normalizes an incoming audience; returns null when no axis is active (= all).
+export function normalizeAudience(input?: Partial<AudienceFilter> | null): AudienceFilter | null {
+  if (!input || typeof input !== 'object') return null;
+  const audience: AudienceFilter = {
+    match: input.match === 'any' ? 'any' : 'all',
+    todos: !!input.todos,
+    perfiles: Array.isArray(input.perfiles) ? input.perfiles.filter(Boolean) : [],
+    delegaciones: Array.isArray(input.delegaciones) ? input.delegaciones.filter(Boolean) : [],
+    eventId: typeof input.eventId === 'string' && input.eventId.trim() ? input.eventId.trim() : null,
+  };
+  return audienceHasAxis(audience) ? audience : null;
+}
+
+export function tokenMatchesAudience(record: PushTokenRecord | string | null | undefined, a: AudienceFilter): boolean {
+  const r: Partial<PushTokenRecord> = record && typeof record === 'object' ? record : {};
+  const topics = Array.isArray(r.topics) ? r.topics : [];
+
+  const axes: boolean[] = [];
+  if (a.todos) axes.push(topics.includes('general'));
+  if (a.perfiles.length > 0) axes.push(!!r.profileType && a.perfiles.includes(r.profileType));
+  if (a.delegaciones.length > 0) axes.push(!!r.delegationId && a.delegaciones.includes(r.delegationId));
+  if (a.eventId) axes.push(topics.includes(`event-${a.eventId}`));
+
+  if (axes.length === 0) return true;
+  return a.match === 'any' ? axes.some(Boolean) : axes.every(Boolean);
 }
 
 export interface ActionButton {
@@ -119,6 +170,9 @@ export interface NotificationPayload {
   // Legacy single-button field. Still accepted for backwards compatibility and
   // merged into actionButtons; the panel sends only actionButtons now.
   actionButton?: ActionButton | null;
+  // Canonical audience filter (4 axes + AND/OR). When present it drives token
+  // filtering; `topics` is kept only for backwards compatibility.
+  audience?: AudienceFilter | null;
   topics?: string[];
 }
 
@@ -234,6 +288,7 @@ export async function dispatchNotification(
 ): Promise<DispatchResult> {
   const category = body.category || 'general';
   const topics = (body.topics || []).filter(Boolean);
+  const audience = normalizeAudience(body.audience);
   const actionButtons = normalizeActionButtons(body);
   const bodyLong = normalizeBodyLong(body);
 
@@ -251,6 +306,7 @@ export async function dispatchNotification(
     imageUrl: body.imageUrl || null,
     internalRoute: body.internalRoute || null,
     actionButtons: actionButtons.length ? actionButtons : null,
+    audience: audience || null,
     topics,
     status: 'sending',
     createdAt: new Date().toISOString(),
@@ -285,11 +341,14 @@ export async function dispatchNotification(
     };
   }
 
-  // Filter by topics: a token matches only if its topics[] contains ALL the
-  // requested topics (AND). No topics requested = send to everyone.
+  // Filter recipients. Preferred path: the canonical `audience` filter (4 axes +
+  // AND/OR). Legacy fallback: a flat `topics` list matched with AND. Neither =
+  // send to everyone.
   let tokenEntries = Object.entries(pushTokensRaw);
 
-  if (topics.length > 0) {
+  if (audience) {
+    tokenEntries = tokenEntries.filter(([, record]) => tokenMatchesAudience(record, audience));
+  } else if (topics.length > 0) {
     tokenEntries = tokenEntries.filter(([, record]) => {
       const tokenTopics = Array.isArray(record?.topics) ? record.topics : [];
       return topics.every((t) => tokenTopics.includes(t));
