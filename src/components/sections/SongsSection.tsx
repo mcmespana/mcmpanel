@@ -188,7 +188,11 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
   };
 
   const updateSongsData = (newData: Record<string, Category>) => {
+    // Preservar los hermanos del nodo /songs (ediciones, solicitudes, fallitos):
+    // el guardado escribe el nodo completo y sin el spread se borrarían las
+    // colas de reportes que escribe la app.
     onUpdate({
+      ...(data as any),
       data: newData,
       updatedAt: new Date().toISOString()
     });

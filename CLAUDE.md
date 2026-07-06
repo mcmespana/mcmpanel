@@ -1,366 +1,124 @@
-# MCM Panel - Project Context for Claude
+# MCM Panel — Contexto del proyecto para agentes
 
-> **Purpose**: This file provides high-level context about the MCM Panel project to help Claude Code understand the business domain, architecture, and development priorities.
-
----
-
-## Project Mission
-
-**MCM Panel** is the central administration dashboard for managing all content in the **MCM App** ecosystem - a mobile application serving a Catholic youth community. The panel enables content managers to update albums, songs, calendars, activities, and Jubilee 2025 content in real-time without requiring app updates.
-
-### Core Objectives
-1. **Simplify content management** - Non-technical staff can update app content via intuitive web interface
-2. **Real-time synchronization** - Changes propagate instantly to all mobile app users via Firebase
-3. **Prevent app updates** - All content is dynamic; no app store deployments needed for content changes
-4. **Centralize administration** - Single dashboard for all MCM App features
+> Panel de administración del ecosistema **MCM App**. Todo lo que se edita aquí
+> se guarda en Firebase Realtime Database y la app móvil lo consume sin
+> necesidad de publicar versiones nuevas.
 
 ---
 
-## Business Context
+## Qué es
 
-### Target Users
-- **Primary**: MCM App content managers and administrators (internal team)
-- **Secondary**: Mobile app end-users (consume data managed through this panel)
+SPA de **React 18 + TypeScript + Vite + shadcn-ui/Tailwind**, desplegada en
+**Vercel**. Además del frontend hay **funciones serverless** en `api/`
+(notificaciones push + proxy de calendarios) y un **cron externo**
+(cron-job.org) que dispara el procesado de notificaciones programadas.
 
-### Key Use Cases
-1. **Daily Operations**:
-   - Update daily Wordle word for game feature
-   - Post new photo albums from events
-   - Send push notifications for important announcements
-   - Update activity schedules and contact information
-
-2. **Event Management**:
-   - Configure calendars for upcoming retreats and gatherings
-   - Update activity materials and deep-dive content
-   - Manage group organization and visit locations
-
-3. **Special Campaigns**:
-   - Jubilee 2025 content management (dedicated section for this initiative)
-   - Seasonal content updates (Advent, Lent, Easter)
-
-### Business Value
-- **Time Savings**: ~80% reduction in content update time (from app store deployments to instant updates)
-- **Flexibility**: Content can be updated daily without technical dependency
-- **User Engagement**: Fresh content keeps mobile app users engaged
-
----
-
-## System Architecture
-
-### High-Level Flow
 ```
-[Content Manager]
-    ↓ (edits via web UI)
-[MCM Panel (React App)]
-    ↓ (saves to)
-[Firebase Realtime Database]
-    ↓ (syncs to)
-[MCM Mobile App] → [End Users]
+[Admin] → MCM Panel (SPA React)
+            ├─ lee/escribe Firebase RTDB (SDK cliente, sin Firebase Auth)
+            └─ POST /api/notifications/* (Vercel) → Expo Push API → dispositivos
+                                        └─ Firebase /notifications, /scheduledNotifications
 ```
 
-### Key Technologies
+**Autenticación**: solo un código de acceso verificado en cliente
+(`src/lib/auth.ts`, hash SHA-256 + cookie). No hay Firebase Auth ni protección
+server-side; los endpoints `api/notifications/*` solo protegen el cron con
+`CRON_SECRET`. ⚠️ Ver "Seguridad" abajo.
 
-**Frontend Stack**:
-- **React 18** + **TypeScript** - Modern, type-safe component architecture
-- **Vite** - Fast development and optimized production builds
-- **shadcn-ui** + **Tailwind** - Consistent, accessible UI components
-- **React Query** - Server state management and caching
+## Secciones reales (src/lib/sections.ts)
 
-**Backend/Database**:
-- **Firebase Realtime Database** - NoSQL cloud database with real-time sync
-- **Auto-save mechanism** - Writes to Firebase every 10 seconds
-- **No authentication layer yet** - TODO: Add Firebase Auth before public launch
+| Sección | Slug | Nodo Firebase | Notas |
+| ------- | ---- | ------------- | ----- |
+| Inicio | `/` | — | Dashboard de atajos |
+| App | `/app` | `/app` | Feedback y evaluaciones de la app |
+| Álbumes | `/albums` | `/albums` | `{ data: [...], updatedAt }` |
+| Calendarios | `/calendarios` | `/calendars` | Fuentes ICS `{ id, name, url, color }` |
+| Cantoral | `/cantoral` | `/songs` | `{ data: {cat: {categoryTitle, songs[]}}, updatedAt, ediciones, solicitudes, fallitos }`. La **fuente de verdad** es el repo `mcmapp-cantoral` (regenera y hace PUT de `songs/data`); las colas `ediciones/solicitudes/fallitos` las escribe la app |
+| Wordle | `/wordle` | `/wordle` | Dormido en la app |
+| Actividades | `/actividades` | `/activities` (+ legacy `/jubileo`) | Eventos y sus subsecciones. `activities/_meta = { updatedAt, data: { activeEventId } }` marca el evento activo global |
+| Notificaciones | `/notificaciones` | `/notifications`, `/scheduledNotifications`, `/pushTokens` | Composer con audiencia de 4 ejes (todos/perfil/delegación/evento) + programadas |
+| Encuestas | `/encuestas` | `/surveys` | Encuestas/evaluaciones (contrato en mcmapp) |
+| Usuarios | `/usuarios` | `/users` | Solo escribe `users/{uid}/isAdmin` |
+| Perfiles | `/perfiles` | `/profileConfig` | Perfiles, delegaciones, overrides, flags globales, modo revisión |
 
-**Deployment**:
-- **Lovable Platform** - Hosting and continuous deployment
-- **Development**: `npm run dev` (localhost:8080)
-- **Production**: Automated builds via Lovable
+## Contratos con la app (fuente de verdad: repo `mcmapp`)
 
-### Data Architecture
+| Tema | Documento |
+| ---- | --------- |
+| Notificaciones (payload, rutas, topics, `/pushTokens`) | `mcmapp/docs/contratos/NOTIFICACIONES_CONTRATO.md` |
+| Sistema de perfiles (`/profileConfig`) | `mcmapp/docs/contratos/PANEL_PERFILES.md` |
+| Encuestas | `mcmapp/docs/contratos/ENCUESTAS_CONTRATO.md` |
+| Eventos (estructura `activities/*`) | `mcmapp/docs/funcionalidades/EVENTOS.md` |
 
-The application manages **8 primary data domains**:
+Reglas de oro al tocar datos:
 
-| Domain | Firebase Path | Purpose | Data Type |
-|--------|--------------|---------|-----------|
-| App Feedback | `/app` | Bug reports, suggestions, congratulations | Array of feedback objects |
-| Albums | `/albums` | Photo galleries from events | Array of album objects with image URLs |
-| Calendars | `/calendars` | Event calendars and schedules | Array of calendar configs |
-| Songs (Cantoral) | `/songs` | Song library for community singing | Array of song objects with lyrics |
-| Wordle | `/wordle` | Daily word game words | Array of word strings |
-| Jubileo | `/jubileo` | Jubilee 2025 special content | Nested object with sections |
-| Activities | `/activities/*` | 8 subsections (apps, compartiendo, contactos, grupos, horario, materiales, profundiza, visitas) | Nested objects per subsection |
-| Notifications | `/notifications` | Push notification history | Array of notification objects |
+1. **`updatedAt` siempre**: la app cachea por `updatedAt`; si escribes `data`
+   sin tocar `updatedAt` del mismo nodo, los clientes no verán el cambio.
+2. **La forma de los nodos es `{ updatedAt, data }`** (hook `useFirebaseData`
+   de la app). No escribas campos "en plano" que la app espera bajo `data`.
+3. **No sobrescribas lo que escribe la app**: `pushTokens.topics`,
+   `activities/*/evaluacion/respuestas`, `songs/ediciones|solicitudes|fallitos`,
+   `*/compartiendo`. Guardados de nodo completo deben preservarlos.
+4. **IDs contra catálogo**: tabs/homeButtons/masItems/albumTags de perfiles
+   deben salir de `src/lib/profileCatalog.ts` (espejo de
+   `mcm-app/constants/profileCatalog.ts`). Un ID desconocido se descarta
+   silenciosamente en la app.
+5. **Eventos**: crear una actividad aquí NO la hace visible en la app; la app
+   necesita registrarla en `mcm-app/constants/events.ts` (ver EVENTOS.md).
+   El id del evento (p. ej. `visitapapa26`) es también el sufijo del topic de
+   suscripción `event-<id>`.
 
-**Data Sync Pattern**:
-- **Real-time listeners** (`onValue`) keep UI in sync with Firebase
-- **Optimistic updates** - UI updates immediately, syncs to Firebase
-- **Auto-save interval** - Every 10 seconds for unsaved changes
-- **Manual save option** - Users can trigger immediate save
+## Mecánica de guardado (JSONManager)
 
----
+- Suscripción en tiempo real a la **raíz** de la RTDB (`onValue('/')`).
+- Las ediciones se acumulan en `pendingUpdates` y se escriben con `set()` de
+  **nodo completo** cada 10 s (auto-save) o con el botón de guardado.
+- El listener de raíz NO debe pisar secciones con cambios pendientes (los
+  heartbeats de `/pushTokens` refrescan la raíz constantemente).
 
-## Development Priorities
+## Comandos
 
-### Current Focus (Sprint Goals)
-1. **Stability & Performance**:
-   - Ensure Firebase sync is reliable under slow connections
-   - Optimize bundle size (currently ~2MB, target <1.5MB)
-   - Add error boundaries to prevent full app crashes
-
-2. **User Experience**:
-   - Improve loading states (skeletons instead of spinners)
-   - Add undo/redo functionality for critical operations
-   - Implement keyboard shortcuts for power users
-
-3. **Feature Completeness**:
-   - Complete Jubileo section with all subsections
-   - Add image upload capability (currently external URLs only)
-   - Implement rich text editor for long-form content
-
-### Technical Debt
-- ⚠️ **No authentication** - Firebase Database currently open (secured by obscurity)
-- ⚠️ **No tests** - Zero test coverage, relying on manual QA
-- ⚠️ **No error tracking** - No Sentry or similar service
-- ⚠️ **Hardcoded strings** - No i18n/localization (Spanish only)
-
-### Planned Improvements
-- [ ] Add Firebase Authentication (Google Sign-In for admins)
-- [ ] Implement Firestore for better querying (migrate from Realtime DB)
-- [ ] Add unit tests with Vitest + React Testing Library
-- [ ] Set up Sentry for error monitoring
-- [ ] Add image upload to Firebase Storage
-- [ ] Implement audit log (track who changed what, when)
-- [ ] Add draft/publish workflow (currently all changes are live)
-
----
-
-## Code Organization Philosophy
-
-### Component Hierarchy
-```
-App.tsx (routing + providers)
-└── pages/Index.tsx
-    └── JSONManager.tsx (orchestrator)
-        ├── AppSidebar.tsx (navigation)
-        └── Sections (8 main features)
-            ├── AppSection.tsx
-            ├── AlbumsSection.tsx
-            ├── CalendarsSection.tsx
-            ├── SongsSection.tsx
-            ├── WordleSection.tsx
-            ├── JubileoSection.tsx
-            ├── ActivitiesSection.tsx
-            │   └── activities/* (8 subsections)
-            └── NotificationsSection.tsx
-```
-
-### Design Patterns
-- **Container/Presenter**: Sections handle data logic, UI components are presentational
-- **Composition over inheritance**: Build complex UIs from small, reusable components
-- **Hooks for logic reuse**: Extract common patterns (Firebase CRUD, form handling) into custom hooks
-- **Co-location**: Keep related files close (subsections near parent section)
-
----
-
-## Development Workflow
-
-### Daily Development
-1. **Pull latest changes**: `git pull origin main`
-2. **Start dev server**: `npm run dev`
-3. **Make changes** with hot-reload feedback
-4. **Test manually** - verify Firebase sync works
-5. **Commit** with conventional commit message
-6. **Push** to branch, create PR
-
-### Pre-Push Checklist
 ```bash
-npm run lint           # Fix all ESLint errors
-npm run build          # Ensure production build succeeds
-npm run preview        # Smoke test production build
+npm run dev        # desarrollo (localhost:8080)
+npm run lint       # ESLint
+npm run build      # build de producción (vite build)
+npm run preview    # smoke test del build
 ```
 
-### Code Review Criteria
-- ✅ Follows TypeScript strict mode (no `any`)
-- ✅ Uses shadcn-ui components (no custom unstyled divs)
-- ✅ Tailwind classes follow ordering convention
-- ✅ Firebase operations have error handling
-- ✅ User feedback via toast notifications
-- ✅ No console.log statements (use proper logging)
-- ✅ Accessible (keyboard navigation, ARIA labels)
+## Archivos clave
 
----
+| Qué | Archivo |
+| --- | ------- |
+| Orquestador + guardado | `src/components/JSONManager.tsx` |
+| Registro de secciones | `src/lib/sections.ts` |
+| Firebase (cliente) | `src/lib/firebase.ts` (env `VITE_*`) |
+| Login por código | `src/lib/auth.ts` + `src/components/LoginPage.tsx` |
+| Envío push (compartido) | `api/_lib/push.ts` |
+| Endpoints push | `api/notifications/{send,schedule,process-scheduled}.ts` |
+| Segmentación de audiencia | `src/lib/audience.ts` (espejo en `api/_lib/push.ts`) |
+| Catálogo de perfiles | `src/lib/profileCatalog.ts` |
+| Seed de profileConfig | `src/lib/profileConfigSeed.ts` |
+| Modo revisión de stores | `src/lib/appReviewMode.ts` |
+| Encuestas | `src/lib/surveys.ts` |
 
-## Domain-Specific Knowledge
+## Seguridad (estado real)
 
-### Jubileo 2025
-The **Jubilee 2025** is a special Holy Year proclaimed by the Pope. MCM App has dedicated content for this event including:
-- Pilgrimages and sacred sites
-- Special prayers and reflections
-- Event calendar for Jubilee activities
-- Educational materials about the Jubilee
+- El panel escribe con el **SDK cliente de Firebase, sin autenticación**.
+  Funciona porque las reglas de la RTDB en producción están abiertas.
+- ⚠️ `mcm-app/database.rules.json` (repo mcmapp) asume que el panel usa Admin
+  SDK. **Desplegar esas reglas rompería este panel** (lectura de raíz y todas
+  las escrituras). Antes de endurecer reglas hay que dar auth real al panel
+  (Firebase Auth + allowlist, o mover escrituras a las funciones de `api/` con
+  credencial de servidor).
+- `/api/notifications/send` y `/api/notifications/schedule` no exigen
+  autenticación: cualquiera que conozca la URL puede enviar push a todos los
+  usuarios. Pendiente de proteger.
 
-**Data Structure** (Firebase `/jubileo`):
-```json
-{
-  "intro": "Welcome text",
-  "sections": [
-    { "title": "...", "content": "...", "image": "..." }
-  ],
-  "events": [
-    { "date": "...", "title": "...", "location": "..." }
-  ]
-}
+## Checklist antes de push
+
+```bash
+npm run lint && npm run build
 ```
 
-### Cantoral (Songs)
-The **Cantoral** is a collection of Catholic hymns and songs used in community gatherings. Managed in the **Songs section**.
-
-**Data Structure** (Firebase `/songs`):
-```json
-[
-  {
-    "id": "song-1",
-    "title": "Song Title",
-    "artist": "Artist Name",
-    "lyrics": "Full lyrics...",
-    "category": "praise|worship|adoration",
-    "youtubeUrl": "https://..."
-  }
-]
-```
-
-### Activities Subsections
-- **Apps**: Recommended Catholic/spiritual mobile apps
-- **Compartiendo**: User-generated content sharing (posts, testimonies)
-- **Contactos**: Directory of community leaders and contacts
-- **Grupos**: Small group organization and schedules
-- **Horario**: Master schedule of all events
-- **Materiales**: Downloadable resources (PDFs, worksheets)
-- **Profundiza**: Deep-dive theological content
-- **Visitas**: Sacred places and pilgrimage sites
-
----
-
-## Non-Functional Requirements
-
-### Performance Targets
-- **Initial Load**: <3 seconds on 3G
-- **Time to Interactive**: <5 seconds
-- **Firebase Sync Latency**: <500ms
-- **Build Time**: <30 seconds
-
-### Browser Support
-- **Primary**: Chrome, Firefox, Safari (latest 2 versions)
-- **Mobile**: Safari iOS 14+, Chrome Android 90+
-- **No IE11 support** (modern ES6+ features used)
-
-### Accessibility (WCAG 2.1)
-- **Level AA compliance** target
-- Keyboard navigation for all interactive elements
-- Screen reader compatible (ARIA labels)
-- Color contrast ratios meet standards
-
-### Security
-- **HTTPS only** in production
-- **No sensitive PII stored** (only content data)
-- **Firebase rules** restrict database access (TODO: implement properly)
-- **CSP headers** via Lovable platform
-
----
-
-## Common Pain Points & Solutions
-
-### Pain Point: Firebase Sync Conflicts
-**Problem**: Multiple admins editing same content simultaneously
-**Current Solution**: Last write wins (not ideal)
-**Future Solution**: Implement operational transforms or lock mechanism
-
-### Pain Point: Image Management
-**Problem**: External image URLs can break (403, expired links)
-**Current Solution**: Manual URL updates
-**Future Solution**: Upload to Firebase Storage with CDN
-
-### Pain Point: No Version History
-**Problem**: Can't rollback accidental deletions
-**Current Solution**: Manual Firebase console recovery
-**Future Solution**: Implement audit log with restore functionality
-
-### Pain Point: Mobile Responsiveness
-**Problem**: Some sections hard to use on small screens
-**Current Solution**: Tailwind responsive utilities
-**Future Solution**: Dedicated mobile layout for common tasks
-
----
-
-## Key Files to Understand
-
-If you're new to the codebase, start here:
-
-1. **`src/App.tsx`** - Application entry point, routing setup
-2. **`src/components/JSONManager.tsx`** - Main orchestrator, section routing
-3. **`src/components/AppSidebar.tsx`** - Navigation structure
-4. **`src/lib/firebase.ts`** - Firebase initialization and config
-5. **`src/components/sections/AlbumsSection.tsx`** - Reference implementation for CRUD patterns
-6. **`tailwind.config.ts`** - Design tokens and theme
-7. **`vite.config.ts`** - Build configuration
-
----
-
-## Glossary
-
-- **MCM**: Name of the Catholic youth community organization
-- **Cantoral**: Spanish for "hymnal" or "songbook"
-- **Jubileo**: Spanish for "Jubilee" (Catholic Holy Year)
-- **Compartiendo**: Spanish for "sharing"
-- **Profundiza**: Spanish for "deepen/dive deeper"
-- **Lovable**: The platform hosting this application (lovable.dev)
-- **shadcn-ui**: Component library built on Radix UI primitives
-- **Firebase Realtime DB**: NoSQL database with WebSocket sync (different from Firestore)
-
----
-
-## Success Metrics
-
-### User Adoption
-- **Daily Active Users**: 5-10 content managers
-- **Session Duration**: 10-30 minutes per session
-- **Update Frequency**: 15-20 updates per day
-
-### Technical Metrics
-- **Uptime**: 99.5% (Lovable platform SLA)
-- **Error Rate**: <1% of requests
-- **Firebase Reads**: ~50k/day, Writes: ~500/day
-- **Bundle Size**: 2.1 MB (target: <1.5 MB)
-
-### Business Outcomes
-- **Content Freshness**: New content daily (vs. weekly before panel)
-- **Admin Time Saved**: ~10 hours/week
-- **App Store Dependencies**: Zero content updates via app store
-
----
-
-## Questions to Ask When Making Changes
-
-1. **Data integrity**: Will this affect existing Firebase data structure?
-2. **Backwards compatibility**: Will mobile app users on old versions still work?
-3. **Performance**: Does this add significant bundle size or runtime cost?
-4. **Accessibility**: Can this be used with keyboard only? With screen reader?
-5. **Mobile UX**: Does this work well on small screens?
-6. **Error handling**: What happens if Firebase is offline or slow?
-7. **User feedback**: Does the user know the operation succeeded/failed?
-8. **Security**: Does this expose sensitive data or create vulnerabilities?
-
----
-
-## When in Doubt...
-
-- **Follow existing patterns** - Look at `AlbumsSection.tsx` for CRUD operations
-- **Use shadcn-ui components** - Don't reinvent UI primitives
-- **Add toast notifications** - Users need feedback on actions
-- **Handle loading states** - Show spinners/skeletons during async operations
-- **Test with Firebase offline** - Use Chrome DevTools to simulate offline
-- **Ask for clarification** - Better to ask than break production data
-
----
-
-**This document evolves with the project. Keep it updated as architecture and priorities change.**
+- ¿Tocaste un contrato de datos? Actualiza el doc correspondiente en `mcmapp/docs/`.
+- ¿Escribes un nodo nuevo? Comprueba cómo lo lee la app (`useFirebaseData` espera `{ updatedAt, data }`).
