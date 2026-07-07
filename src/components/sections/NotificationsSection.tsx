@@ -321,6 +321,11 @@ export function NotificationsSection() {
   // and the delegation list (from /profileConfig) that populates the multiselect.
   const [tokens, setTokens] = useState<SegmentTokenRecord[]>([]);
   const [delegations, setDelegations] = useState<DelegationListItem[]>([]);
+  // Eventos declarados en /activities (+ legacy /jubileo), para que el selector
+  // de evento los muestre aunque aún no tengan ningún suscriptor en /pushTokens.
+  const [activityEvents, setActivityEvents] = useState<
+    { id: string; title: string | null }[]
+  >([]);
   const { toast } = useToast();
 
   // Active tab is mirrored in the URL (?tab=compose) so the home dashboard can
@@ -385,6 +390,39 @@ export function NotificationsSection() {
       } else {
         setTokens([]);
       }
+    });
+    return () => unsub();
+  }, []);
+
+  // Eventos declarados en /activities (id = clave del nodo, que coincide con el
+  // id del registry de la app y por tanto con el topic "event-<id>"). Se excluye
+  // "_meta" (config global). La etiqueta sale de <id>/_meta.title si existe. Se
+  // añade el legacy "jubileo" (nodo /jubileo en la raíz) para que también salga.
+  useEffect(() => {
+    const db = getDB();
+    const actRef = ref(db, '/activities');
+    const unsub = onValue(actRef, (snap) => {
+      const val = snap.val();
+      const events: { id: string; title: string | null }[] = [];
+      if (val && typeof val === 'object') {
+        for (const [id, node] of Object.entries(val)) {
+          if (id === '_meta') continue;
+          const title =
+            node && typeof node === 'object'
+              ? (node as { _meta?: { title?: unknown } })._meta?.title
+              : undefined;
+          events.push({
+            id,
+            title: typeof title === 'string' && title.trim() ? title : null,
+          });
+        }
+      }
+      // El Jubileo vive fuera de /activities (nodo /jubileo). Lo incluimos aquí
+      // para no perderlo; si ya está no se duplica (dedup en eventOptions).
+      if (!events.some((e) => e.id === 'jubileo')) {
+        events.push({ id: 'jubileo', title: null });
+      }
+      setActivityEvents(events);
     });
     return () => unsub();
   }, []);
@@ -459,14 +497,34 @@ export function NotificationsSection() {
     (id: string) => delegations.find((d) => d.id === id)?.label ?? id,
     [delegations],
   );
-  const eventLabel = useCallback((id: string) => eventLabelFor(id), []);
+
+  // Etiquetas de evento provenientes de /activities/<id>/_meta.title, para dar
+  // nombre bonito a los eventos declarados en el panel sin suscriptores todavía.
+  const activityLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of activityEvents) if (e.title) map.set(e.id, e.title);
+    return map;
+  }, [activityEvents]);
+
+  // Resuelve la etiqueta de un evento: título de /activities > EVENT_LABELS > id.
+  const resolveEventLabel = useCallback(
+    (id: string) => activityLabels.get(id) ?? eventLabelFor(id),
+    [activityLabels],
+  );
+
+  const eventLabel = useCallback(
+    (id: string) => resolveEventLabel(id),
+    [resolveEventLabel],
+  );
 
   // Descubre los eventos (topic "event-<id>") presentes en /pushTokens y cuenta
-  // suscriptores por evento. Une los descubiertos con KNOWN_EVENT_IDS (para que
-  // se vean aunque tengan 0 suscriptores) y los ordena por nº de suscriptores.
+  // suscriptores por evento. Une los descubiertos con KNOWN_EVENT_IDS y con los
+  // ids de /activities (+ jubileo) para que se vean aunque tengan 0 suscriptores,
+  // y los ordena por nº de suscriptores.
   const eventOptions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const id of KNOWN_EVENT_IDS) counts.set(id, 0);
+    for (const e of activityEvents) if (!counts.has(e.id)) counts.set(e.id, 0);
     for (const t of tokens) {
       const topics = Array.isArray(t?.topics) ? t.topics : [];
       for (const top of topics) {
@@ -477,9 +535,9 @@ export function NotificationsSection() {
       }
     }
     return [...counts.entries()]
-      .map(([id, count]) => ({ id, label: eventLabelFor(id), count }))
+      .map(([id, count]) => ({ id, label: resolveEventLabel(id), count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [tokens]);
+  }, [tokens, activityEvents, resolveEventLabel]);
 
   // Recalcula a partir del snapshot de /pushTokens cada vez que cambia el filtro.
   const recipients = useMemo(() => {
