@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ArrowLeft, Eye, EyeOff, Settings2, Zap, Archive, Code2, Save, X } from 'lucide-react';
+import { Plus, ArrowLeft, Eye, EyeOff, Settings2, Zap, Archive, Code2, Save, X, Info } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -317,6 +317,22 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
             )}
           </div>
 
+          {/* Qué consume realmente la app de estos campos (ver PLAN_INTEGRACIONES
+              B1). Título/color/banner los aplica la app al EVENTO ACTIVO sin
+              publicar versión; el "Estado" y los eventos NO activos aún se leen
+              del registry de la app. */}
+          <div className="flex gap-2 rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              La app aplica <strong>Título</strong>, <strong>Color</strong> y{' '}
+              <strong>Banner</strong> al <strong>evento activo</strong> sin
+              publicar versión. El <strong>Estado</strong> (activo/archivado) y
+              los eventos que no sean el activo aún dependen del registry de la
+              app (<code className="bg-muted px-1 rounded">constants/events.ts</code>);
+              para archivar o crear un evento hace falta tocar ese archivo.
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Status */}
             <div className="space-y-1">
@@ -494,6 +510,17 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
               <p className="text-xs text-muted-foreground mt-2">
                 Sin espacios, se guardará en minúsculas.
               </p>
+              <div className="flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 mt-3 text-xs text-muted-foreground">
+                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+                <span>
+                  El evento <strong>no aparecerá en la app</strong> hasta que se
+                  registre en{' '}
+                  <code className="bg-muted px-1 rounded">mcm-app/constants/events.ts</code>{' '}
+                  (con su id, tab y secciones). Aquí solo creas el nodo de datos
+                  en Firebase. Ver <code className="bg-muted px-1 rounded">EVENTOS.md</code>{' '}
+                  del repo mcmapp.
+                </span>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancelar</Button>
