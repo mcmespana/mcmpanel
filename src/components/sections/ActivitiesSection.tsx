@@ -37,9 +37,18 @@ interface EventMeta {
   updatedAt?: string;
 }
 
+// La app lee este nodo con useFirebaseData('activities/_meta'), que espera la
+// forma { updatedAt, data: {...} }. NO escribir los campos en plano: la app
+// solo mira _meta.data.activeEventId (ver mcm-app/contexts/ActiveEventContext.tsx).
 interface GlobalMeta {
   activeEventId?: string;
+}
+
+interface GlobalMetaNode {
   updatedAt?: string;
+  data?: GlobalMeta;
+  // Forma plana antigua (escrituras previas del panel); solo para lectura.
+  activeEventId?: string;
 }
 
 interface ActivitiesSectionProps {
@@ -71,7 +80,13 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   const [rawJsonError, setRawJsonError] = useState<string | null>(null);
 
   // _meta at root level is reserved for global event config; exclude from activity list
-  const globalMeta: GlobalMeta = data?._meta ?? {};
+  const globalMetaNode: GlobalMetaNode = data?._meta ?? {};
+  // Tolera la forma plana antigua ({ activeEventId }) además de la canónica
+  // ({ data: { activeEventId } }) que consume la app.
+  const globalMeta: GlobalMeta = {
+    activeEventId: globalMetaNode.data?.activeEventId ?? globalMetaNode.activeEventId,
+  };
+  const globalMetaUpdatedAt = globalMetaNode.updatedAt;
   const activities = Object.keys(data || {}).filter((k) => k !== '_meta');
   const currentActivityData = selectedActivity ? data?.[selectedActivity] : null;
   const eventMeta: EventMeta = currentActivityData?._meta ?? {};
@@ -79,7 +94,10 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   const handleGlobalMetaUpdate = (patch: Partial<GlobalMeta>) => {
     onUpdate({
       ...data,
-      _meta: { ...globalMeta, ...patch, updatedAt: new Date().toISOString() },
+      _meta: {
+        updatedAt: new Date().toISOString(),
+        data: { ...globalMeta, ...patch },
+      },
     });
   };
 
@@ -490,9 +508,9 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
         <div className="flex items-center gap-2">
           <Settings2 className="w-4 h-4 text-muted-foreground" />
           <h3 className="font-semibold text-sm">Modo evento global</h3>
-          {globalMeta.updatedAt && (
+          {globalMetaUpdatedAt && (
             <span className="ml-auto text-xs text-muted-foreground">
-              {new Date(globalMeta.updatedAt).toLocaleString()}
+              {new Date(globalMetaUpdatedAt).toLocaleString()}
             </span>
           )}
         </div>

@@ -75,7 +75,14 @@ export function JSONManager() {
       rootRef,
       (snap) => {
         const val = snap.val();
-        setJsonData(val && typeof val === 'object' ? val : {} as JSONData);
+        const remote = (val && typeof val === 'object' ? val : {}) as JSONData;
+        // La raíz cambia constantemente por escrituras de la app (heartbeats de
+        // /pushTokens, respuestas de encuestas…). No dejar que ese refresco
+        // pise las secciones con ediciones locales aún sin guardar.
+        const pending = pendingUpdates.current;
+        setJsonData(
+          Object.keys(pending).length > 0 ? { ...remote, ...pending } : remote,
+        );
         setLoading(false);
       },
       (err) => {
@@ -161,7 +168,10 @@ export function JSONManager() {
         }
         continue;
       }
-      await set(ref(db, `/${key}`), (jsonData as any)[key]);
+      // Escribir SIEMPRE el valor pendiente, no jsonData[key]: jsonData puede
+      // haber sido refrescado por el listener de la raíz entre la edición y el
+      // guardado, y perderíamos el cambio local.
+      await set(ref(db, `/${key}`), value);
     }
   };
 

@@ -120,9 +120,12 @@ const PROFILE_OPTIONS: { id: ProfileType; label: string }[] = [
 // etiquetas solo dan un nombre bonito; un id sin etiqueta se muestra tal cual.
 // KNOWN_EVENT_IDS garantiza que estos se vean aunque aún no tengan suscriptores.
 // Además se permite teclear un id manual para casos puntuales.
+// OJO: la clave es el id del REGISTRY de la app (constants/events.ts), no el
+// nombre del tab. Para la Visita del Papa el id es "visitapapa26" (el tab se
+// llama "visitapapa", pero el topic de suscripción es "event-visitapapa26").
 const EVENT_LABELS: Record<string, string> = {
   jubileo: 'Jubileo 2025',
-  visitapapa: 'Visita del Papa',
+  visitapapa26: 'Visita del Papa 2026',
 };
 const KNOWN_EVENT_IDS = Object.keys(EVENT_LABELS);
 const EVENT_TOPIC_PREFIX = 'event-';
