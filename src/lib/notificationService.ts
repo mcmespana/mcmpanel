@@ -22,6 +22,10 @@ export interface SendNotificationRequest {
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
+  // Deep link a un evento del registry de la app (id, p. ej. "jubileo" o
+  // "visitapapa26"). Al tocar la notificación, la app abre el hub del evento.
+  // Tiene prioridad sobre internalRoute en la app cuando resuelve.
+  eventId?: string;
   // Formato canónico: hasta 3 botones de acción in-app.
   actionButtons?: ActionButton[];
   // Segmentación canónica: 4 ejes (todos/perfiles/delegaciones/evento) + AND/OR.
@@ -70,6 +74,7 @@ export interface ScheduledNotification {
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
+  eventId?: string;
   actionButtons?: ActionButton[] | null;
   // Legacy single-button field on records created before the multi-button change.
   actionButton?: ActionButton | null;

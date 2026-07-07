@@ -50,6 +50,9 @@ import type { ProfileType, DelegationListItem } from '@/types/profileConfig';
 // its /notifications/<id> entry in Firebase.
 const DETAIL = '__detail';
 const CUSTOM_ROUTE = '__custom';
+// Deep link a un evento del registry de la app: el payload lleva `data.eventId`
+// y la app abre el hub del evento (ver notificationEventRoute.ts en mcmapp).
+const EVENT_ROUTE = '__event';
 
 // Vocabulario alineado con la MCM App (types/notifications.ts).
 const CATEGORIES = [
@@ -169,8 +172,9 @@ interface FormState {
   priority: 'default' | 'normal' | 'high';
   icon: string;
   imageUrl: string;
-  routeChoice: string;   // dropdown: DETAIL, a preset route id, or CUSTOM_ROUTE
+  routeChoice: string;   // dropdown: DETAIL, a preset route id, CUSTOM_ROUTE or EVENT_ROUTE
   customRoute: string;   // free-text deep link when routeChoice === CUSTOM_ROUTE
+  routeEventId: string;  // event id (data.eventId) when routeChoice === EVENT_ROUTE
   // Up to MAX_ACTION_BUTTONS in-app action buttons (canonical `actionButtons`).
   actionButtons: ActionButtonForm[];
   // ─── Audiencia (4 ejes combinables) ───
@@ -193,6 +197,7 @@ const emptyForm: FormState = {
   imageUrl: '',
   routeChoice: DETAIL,
   customRoute: '',
+  routeEventId: '',
   actionButtons: [],
   // Por defecto: a todos los onboarded (topic general), combinando con AND.
   audienceMatch: 'all',
@@ -207,12 +212,22 @@ const emptyForm: FormState = {
 // expanded in its detail view (it matches data.id against /notifications/<id>).
 function resolveRoute(form: FormState): string | undefined {
   if (form.routeChoice === DETAIL) return undefined;
+  if (form.routeChoice === EVENT_ROUTE) return undefined; // usa data.eventId
   if (form.routeChoice === CUSTOM_ROUTE) return form.customRoute.trim() || undefined;
   return form.routeChoice;
 }
 
+// Deep link a un evento: devuelve el id (data.eventId) solo cuando el usuario
+// eligió "Abrir un evento" y seleccionó uno.
+function resolveEventId(form: FormState): string | undefined {
+  if (form.routeChoice !== EVENT_ROUTE) return undefined;
+  return form.routeEventId.trim() || undefined;
+}
+
 // Human-readable description of what happens when the user taps the push.
 function describeTapAction(form: FormState): string {
+  const eventId = resolveEventId(form);
+  if (eventId) return `Abre el evento «${eventId}»`;
   const route = resolveRoute(form);
   if (!route) return 'Abre la notificación en grande';
   return route;
@@ -610,6 +625,7 @@ export function NotificationsSection() {
       icon: form.icon || undefined,
       imageUrl: form.imageUrl || undefined,
       internalRoute: resolveRoute(form),
+      eventId: resolveEventId(form),
       actionButtons: actionButtons.length ? actionButtons : undefined,
       audience: segmented ? audience : undefined,
     };
@@ -1033,10 +1049,28 @@ export function NotificationsSection() {
                         <SelectSeparator />
                         <SelectGroup>
                           <SelectLabel className="text-muted-foreground">Avanzado</SelectLabel>
+                          <SelectItem value={EVENT_ROUTE}>🎉 Abrir un evento…</SelectItem>
                           <SelectItem value={CUSTOM_ROUTE}>Ruta personalizada (deep link)…</SelectItem>
                         </SelectGroup>
                       </SelectContent>
                     </Select>
+                    {form.routeChoice === EVENT_ROUTE && (
+                      <Select
+                        value={form.routeEventId || undefined}
+                        onValueChange={(v) => updateForm('routeEventId', v)}
+                      >
+                        <SelectTrigger className="bg-input border-border/50">
+                          <SelectValue placeholder="Elige el evento a abrir" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {eventOptions.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                     {form.routeChoice === CUSTOM_ROUTE && (
                       <Input
                         placeholder="Ej: /(tabs)/mas"
@@ -1048,7 +1082,9 @@ export function NotificationsSection() {
                     <p className="text-xs text-muted-foreground">
                       {form.routeChoice === DETAIL
                         ? 'Recomendado: al tocarla se abre esta misma notificación desplegada en el centro de notificaciones.'
-                        : '⚠️ = la pantalla depende del perfil del usuario. Para todos, usa Inicio, Calendario, Fotos o Más.'}
+                        : form.routeChoice === EVENT_ROUTE
+                          ? 'Al tocarla, la app abre el hub del evento elegido. El evento debe estar registrado en la app (constants/events.ts); si no, se abre el centro de notificaciones.'
+                          : '⚠️ = la pantalla depende del perfil del usuario. Para todos, usa Inicio, Calendario, Fotos o Más.'}
                     </p>
                   </div>
 

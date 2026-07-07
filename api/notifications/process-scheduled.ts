@@ -70,6 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           icon: item.icon,
           imageUrl: item.imageUrl,
           internalRoute: item.internalRoute,
+          eventId: item.eventId,
           // New canonical field; `actionButton` kept for records scheduled
           // before this change (normalizeActionButtons merges both).
           actionButtons: item.actionButtons,

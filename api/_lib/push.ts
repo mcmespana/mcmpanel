@@ -165,6 +165,9 @@ export interface NotificationPayload {
   icon?: string;
   imageUrl?: string;
   internalRoute?: string;
+  // Deep link to an app-registry event (id, e.g. "jubileo" / "visitapapa26").
+  // On tap the app opens that event's hub; takes precedence over internalRoute.
+  eventId?: string;
   // Canonical format: up to 3 in-app action buttons.
   actionButtons?: ActionButton[];
   // Legacy single-button field. Still accepted for backwards compatibility and
@@ -305,6 +308,7 @@ export async function dispatchNotification(
     icon: body.icon || null,
     imageUrl: body.imageUrl || null,
     internalRoute: body.internalRoute || null,
+    eventId: body.eventId || null,
     actionButtons: actionButtons.length ? actionButtons : null,
     audience: audience || null,
     topics,
@@ -375,6 +379,7 @@ export async function dispatchNotification(
         id: notificationId, // critical: used by the app to dedupe / mark read
         category,
         internalRoute: body.internalRoute || null,
+        eventId: body.eventId || null,
         icon: body.icon || null,
         imageUrl: body.imageUrl || null,
         // Canonical: send only `actionButtons` (the app combines/dedupes if both

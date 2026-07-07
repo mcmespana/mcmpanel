@@ -85,6 +85,7 @@ async function createSchedule(req: VercelRequest, res: VercelResponse) {
     icon: body.icon || undefined,
     imageUrl: body.imageUrl || undefined,
     internalRoute: body.internalRoute || undefined,
+    eventId: body.eventId || undefined,
     actionButtons: actionButtons.length ? actionButtons : undefined,
     audience: normalizeAudience(body.audience) || undefined,
     topics: (body.topics || []).filter(Boolean),
