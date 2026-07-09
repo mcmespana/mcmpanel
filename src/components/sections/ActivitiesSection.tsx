@@ -53,7 +53,13 @@ interface GlobalMetaNode {
 
 interface ActivitiesSectionProps {
   data: any;
-  onUpdate: (data: any) => void;
+  // `editedPath` = segmentos (relativos al árbol combinado que recibe esta
+  // sección) de la subruta que realmente cambió, p. ej. ['_meta'],
+  // ['visitapapa26', 'compartiendo'] o ['jubileo', 'horario']. Lo usa el
+  // JSONManager para escribir SOLO esa subruta (update() granular) en vez de
+  // pisar todo /activities, preservando lo que escribe la app
+  // (evaluacion/respuestas, compartiendo no editado). Ver B4 del PLAN.
+  onUpdate: (data: any, editedPath?: string[]) => void;
 }
 
 const subsections = [
@@ -92,24 +98,30 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   const eventMeta: EventMeta = currentActivityData?._meta ?? {};
 
   const handleGlobalMetaUpdate = (patch: Partial<GlobalMeta>) => {
-    onUpdate({
-      ...data,
-      _meta: {
-        updatedAt: new Date().toISOString(),
-        data: { ...globalMeta, ...patch },
+    onUpdate(
+      {
+        ...data,
+        _meta: {
+          updatedAt: new Date().toISOString(),
+          data: { ...globalMeta, ...patch },
+        },
       },
-    });
+      ['_meta'],
+    );
   };
 
   const handleEventMetaUpdate = (patch: Partial<EventMeta>) => {
     if (!selectedActivity) return;
-    onUpdate({
-      ...data,
-      [selectedActivity]: {
-        ...currentActivityData,
-        _meta: { ...eventMeta, ...patch, updatedAt: new Date().toISOString() },
+    onUpdate(
+      {
+        ...data,
+        [selectedActivity]: {
+          ...currentActivityData,
+          _meta: { ...eventMeta, ...patch, updatedAt: new Date().toISOString() },
+        },
       },
-    });
+      [selectedActivity, '_meta'],
+    );
   };
 
   const handleCreateActivity = () => {
@@ -127,7 +139,7 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
       visitas: { data: [], hidden: false, updatedAt: new Date().toISOString() },
     };
 
-    onUpdate({ ...data, [activityName]: newActivityStructure });
+    onUpdate({ ...data, [activityName]: newActivityStructure }, [activityName]);
     setSelectedActivity(activityName);
     setIsCreateDialogOpen(false);
     setNewActivityName('');
@@ -136,28 +148,34 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   const handleToggleHidden = (subsectionId: SubsectionId) => {
     if (!selectedActivity || !currentActivityData) return;
     const subsectionData = currentActivityData[subsectionId];
-    onUpdate({
-      ...data,
-      [selectedActivity]: {
-        ...currentActivityData,
-        [subsectionId]: {
-          ...subsectionData,
-          hidden: !subsectionData?.hidden,
-          updatedAt: new Date().toISOString(),
+    onUpdate(
+      {
+        ...data,
+        [selectedActivity]: {
+          ...currentActivityData,
+          [subsectionId]: {
+            ...subsectionData,
+            hidden: !subsectionData?.hidden,
+            updatedAt: new Date().toISOString(),
+          },
         },
       },
-    });
+      [selectedActivity, subsectionId],
+    );
   };
 
   const handleSubsectionUpdate = (subsectionData: any) => {
-    if (!selectedActivity) return;
-    onUpdate({
-      ...data,
-      [selectedActivity]: {
-        ...currentActivityData,
-        [selectedSubsection!]: { ...subsectionData, updatedAt: new Date().toISOString() },
+    if (!selectedActivity || !selectedSubsection) return;
+    onUpdate(
+      {
+        ...data,
+        [selectedActivity]: {
+          ...currentActivityData,
+          [selectedSubsection]: { ...subsectionData, updatedAt: new Date().toISOString() },
+        },
       },
-    });
+      [selectedActivity, selectedSubsection],
+    );
   };
 
   const handleEnterRawMode = () => {

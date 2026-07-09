@@ -20,7 +20,11 @@ import { disableAppReviewMode, enableAppReviewMode } from '@/lib/appReviewMode';
 import { HomeDashboard } from './HomeDashboard';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
-import { onValue, ref, set } from 'firebase/database';
+import { onValue, ref, set, update } from 'firebase/database';
+import {
+  activityFirebasePath,
+  buildGranularActivityWrites,
+} from '@/lib/activityWrites';
 import { cn } from '@/lib/utils';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SECTION_META, pathForSection, sectionForPath, type SectionId } from '@/lib/sections';
@@ -47,6 +51,10 @@ export function JSONManager() {
   const saveTimer = useRef<number | null>(null);
   const { toast } = useToast();
   const pendingUpdates = useRef<Record<string, any>>({});
+  // B4: rutas Firebase concretas que el admin editó dentro de Actividades/Jubileo
+  // (p. ej. 'activities/visitapapa26/compartiendo'). Se escriben con update()
+  // granular en vez de pisar todo /activities. Ver src/lib/activityWrites.ts.
+  const pendingActivityPaths = useRef<Set<string>>(new Set());
 
   // The active section is derived from the URL so every section is linkable
   // (e.g. /notificaciones) and the browser back/forward buttons work.
@@ -159,8 +167,30 @@ export function JSONManager() {
 
   const writePending = async () => {
     const db = getDB();
+
+    // B4: escrituras granulares de Actividades/Jubileo. En vez de `set()` del
+    // nodo completo (que pisaría evaluacion/respuestas y compartiendo que
+    // escribe la app), hacemos un único `update()` multi-path con SOLO las
+    // subrutas que el admin editó. Los valores se resuelven de las copias
+    // pendientes (protegidas del refresco remoto por el listener de la raíz).
+    const granularWrites = buildGranularActivityWrites(
+      [...pendingActivityPaths.current],
+      pendingUpdates.current['activities'],
+      pendingUpdates.current['jubileo'],
+    );
+    const wroteActivities = pendingActivityPaths.current.size > 0;
+    if (Object.keys(granularWrites).length > 0) {
+      await update(ref(db, '/'), granularWrites);
+    }
+
     const entries = Object.entries(pendingUpdates.current);
     for (const [key, value] of entries) {
+      // Actividades/Jubileo ya se escribieron granularmente arriba (si hubo
+      // rutas). Evitamos el `set()` de nodo completo que reintroduciría el
+      // clobber. Si NO hubo rutas (fallback), caemos al `set()` de siempre.
+      if ((key === 'activities' || key === 'jubileo') && wroteActivities) {
+        continue;
+      }
       if (key === 'wordle') {
         if (value && typeof value === 'object') {
           if (value['daily-words'] !== undefined) await set(ref(db, '/wordle/daily-words'), value['daily-words']);
@@ -183,6 +213,7 @@ export function JSONManager() {
       setSaveStatus('saved');
       setDirty(false);
       pendingUpdates.current = {};
+      pendingActivityPaths.current.clear();
       toast({ title: 'Guardado en Firebase', description: 'Los cambios se han sincronizado.' });
     } catch (e) {
       console.error(e);
@@ -202,6 +233,7 @@ export function JSONManager() {
             setSaveStatus('saved');
             setDirty(false);
             pendingUpdates.current = {};
+            pendingActivityPaths.current.clear();
           })
           .catch((e) => {
             console.error(e);
@@ -276,8 +308,21 @@ export function JSONManager() {
           ...((jsonData!.activities && typeof jsonData!.activities === 'object') ? jsonData!.activities : {}),
           ...(jsonData!.jubileo ? { jubileo: jsonData!.jubileo } : {})
         };
-        const handleActivitiesUpdate = (updatedData: any) => {
+        const handleActivitiesUpdate = (updatedData: any, editedPath?: string[]) => {
           const { jubileo, ...restActivities } = updatedData;
+          if (editedPath && editedPath.length > 0) {
+            // B4: registra la subruta editada para escribirla granularmente y
+            // actualiza en memoria SOLO la sección tocada (así una edición de
+            // Actividades no reescribe todo /jubileo, ni viceversa).
+            pendingActivityPaths.current.add(activityFirebasePath(editedPath));
+            if (editedPath[0] === 'jubileo') {
+              updateSectionData('jubileo', jubileo);
+            } else {
+              updateSectionData('activities', restActivities);
+            }
+            return;
+          }
+          // Fallback sin ruta (no debería ocurrir): comportamiento antiguo.
           if (jubileo !== undefined) {
             updateSectionData('jubileo', jubileo);
           }
