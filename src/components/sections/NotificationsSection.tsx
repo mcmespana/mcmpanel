@@ -4,6 +4,7 @@ import {
   CheckCircle, Trash2, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw, Megaphone,
   CalendarClock, XCircle, Ban, Plus, X, MousePointerClick,
+  ChevronDown, Settings2,
 } from 'lucide-react';
 import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,9 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
@@ -54,7 +57,12 @@ const CUSTOM_ROUTE = '__custom';
 // y la app abre el hub del evento (ver notificationEventRoute.ts en mcmapp).
 const EVENT_ROUTE = '__event';
 
-// Vocabulario alineado con la MCM App (types/notifications.ts).
+// Vocabulario alineado con la MCM App (types/notifications.ts). Cada categoría
+// es también, desde la build de agosto de 2026, un canal de Android separado
+// (mismo id salvo "general" → "default"): el usuario puede silenciar el
+// cantoral sin silenciar los avisos urgentes. Mirror de resolveChannelId() en
+// api/_lib/push.ts — solo para mostrarlo en la vista previa, el envío real lo
+// calcula el backend.
 const CATEGORIES = [
   { id: 'general', label: 'General' },
   { id: 'eventos', label: 'Eventos' },
@@ -64,6 +72,10 @@ const CATEGORIES = [
   { id: 'urgente', label: 'Urgente' },
   { id: 'mantenimiento', label: 'Mantenimiento' },
 ];
+
+function channelIdFor(category: string): string {
+  return category === 'general' ? 'default' : category;
+}
 
 const PRIORITIES = [
   { id: 'default', label: 'Por defecto' },
@@ -328,6 +340,8 @@ export function NotificationsSection() {
   const [stats, setStats] = useState<NotificationStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [history, setHistory] = useState<NotificationRecord[]>([]);
+  // Collapsed by default: icono + prioridad rara vez hace falta tocarlos.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   // Scheduling
   const [scheduleMode, setScheduleMode] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
@@ -947,83 +961,108 @@ export function NotificationsSection() {
                     )}
                   </div>
 
-                  {/* Category + Priority */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Categoría</Label>
-                      <Select value={form.category} onValueChange={(v) => updateForm('category', v)}>
-                        <SelectTrigger className="bg-input border-border/50">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {CATEGORIES.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Prioridad</Label>
-                      <Select value={form.priority} onValueChange={(v) => updateForm('priority', v)}>
-                        <SelectTrigger className="bg-input border-border/50">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PRIORITIES.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  {/* Category: drives the Android mute channel + the in-app chip */}
+                  <div className="space-y-2">
+                    <Label>Categoría</Label>
+                    <Select value={form.category} onValueChange={(v) => updateForm('category', v)}>
+                      <SelectTrigger className="bg-input border-border/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      En Android es el canal de sonido: cada persona puede silenciar «Cancionero»
+                      sin silenciar «Urgente». Elige la que mejor describa el aviso.
+                    </p>
                   </div>
 
-                  {/* Icon + Image URL */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Icono de notificación</Label>
-                      <ImageUploadCropper
-                        value={form.icon}
-                        onChange={(url) => updateForm('icon', url)}
-                        storagePath="notificaciones/iconos"
-                        aspectRatio={1}
-                        maxWidth={256}
-                        maxHeight={256}
-                        quality={0.9}
-                      />
-                      <Input
-                        id="icon"
-                        placeholder="O pega una URL directamente…"
-                        value={form.icon}
-                        onChange={(e) => updateForm('icon', e.target.value)}
-                        className="bg-input border-border/50 text-xs"
-                      />
-                      <p className="text-xs text-muted-foreground">Miniatura en el centro de notificaciones de la app.</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Imagen de notificación</Label>
-                      <ImageUploadCropper
-                        value={form.imageUrl}
-                        onChange={(url) => updateForm('imageUrl', url)}
-                        storagePath="notificaciones"
-                        aspectRatio={2 / 1}
-                        maxWidth={1024}
-                        maxHeight={512}
-                        quality={0.75}
-                      />
-                      <Input
-                        id="imageUrl"
-                        placeholder="O pega una URL directamente…"
-                        value={form.imageUrl}
-                        onChange={(e) => updateForm('imageUrl', e.target.value)}
-                        className="bg-input border-border/50 text-xs"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Se ve en la notificación en Android. En iOS solo dentro de la app.
-                      </p>
-                    </div>
+                  {/* Image */}
+                  <div className="space-y-2">
+                    <Label>Imagen de notificación</Label>
+                    <ImageUploadCropper
+                      value={form.imageUrl}
+                      onChange={(url) => updateForm('imageUrl', url)}
+                      storagePath="notificaciones"
+                      aspectRatio={2 / 1}
+                      maxWidth={1024}
+                      maxHeight={512}
+                      quality={0.75}
+                    />
+                    <Input
+                      id="imageUrl"
+                      placeholder="O pega una URL directamente…"
+                      value={form.imageUrl}
+                      onChange={(e) => updateForm('imageUrl', e.target.value)}
+                      className="bg-input border-border/50 text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Se ve en la notificación del sistema, en Android y en iOS.
+                    </p>
                   </div>
+
+                  {/* Advanced: icon + priority, rarely touched → collapsed by default */}
+                  <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between rounded-md border border-border/30 bg-muted/10 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Settings2 className="w-4 h-4" />
+                          Opciones avanzadas (icono, prioridad)
+                        </span>
+                        <ChevronDown className={cn('w-4 h-4 transition-transform', advancedOpen && 'rotate-180')} />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-4 pt-3 px-1">
+                      <div className="space-y-2">
+                        <Label>Icono de notificación</Label>
+                        <ImageUploadCropper
+                          value={form.icon}
+                          onChange={(url) => updateForm('icon', url)}
+                          storagePath="notificaciones/iconos"
+                          aspectRatio={1}
+                          maxWidth={256}
+                          maxHeight={256}
+                          quality={0.9}
+                        />
+                        <Input
+                          id="icon"
+                          placeholder="O pega una URL directamente…"
+                          value={form.icon}
+                          onChange={(e) => updateForm('icon', e.target.value)}
+                          className="bg-input border-border/50 text-xs"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Miniatura pequeña, solo dentro del centro de notificaciones de la app.
+                          Casi nunca hace falta.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Prioridad</Label>
+                        <Select value={form.priority} onValueChange={(v) => updateForm('priority', v)}>
+                          <SelectTrigger className="bg-input border-border/50">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PRIORITIES.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Solo afecta a la velocidad de entrega. El sonido y el aviso emergente
+                          ya los decide la Categoría de arriba: deja «Por defecto» salvo que
+                          sepas que quieres cambiarlo.
+                        </p>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
 
                   {/* Internal route / tap action */}
                   <div className="space-y-2">
@@ -1524,12 +1563,18 @@ export function NotificationsSection() {
                     <span className="text-muted-foreground">Categoría:</span>
                     <Badge variant="secondary">{form.category}</Badge>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Prioridad:</span>
-                    <Badge variant={form.priority === 'high' ? 'destructive' : 'secondary'}>
-                      {form.priority}
-                    </Badge>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground flex-shrink-0">Canal Android:</span>
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{channelIdFor(form.category)}</code>
                   </div>
+                  {advancedOpen && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Prioridad:</span>
+                      <Badge variant={form.priority === 'high' ? 'destructive' : 'secondary'}>
+                        {form.priority}
+                      </Badge>
+                    </div>
+                  )}
                   <div className="flex justify-between gap-2">
                     <span className="text-muted-foreground flex-shrink-0">Al tocar:</span>
                     {resolveRoute(form) ? (

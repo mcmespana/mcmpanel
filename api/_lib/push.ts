@@ -30,6 +30,19 @@ export function resolveCategoryId(category: string): string {
   return 'general';
 }
 
+// Android channels registered in the app (constants/notificationChannels.ts).
+// Closed list: a channelId the app hasn't declared silently drops the push on
+// Android, so anything outside this set must fall back to `default`.
+const ANDROID_CHANNELS = new Set([
+  'urgente', 'eventos', 'celebraciones', 'cancionero', 'fotos', 'mantenimiento',
+]);
+
+// Maps data.category to the Android channelId (top-level). `general` (and any
+// unrecognized category) maps to `default`, the pre-existing channel.
+export function resolveChannelId(category: string): string {
+  return ANDROID_CHANNELS.has(category) ? category : 'default';
+}
+
 export function getFirebaseDbUrl(): string {
   return FIREBASE_DB_URL;
 }
@@ -138,10 +151,14 @@ export interface ExpoPushMessage {
   body: string;
   data?: Record<string, unknown>;
   categoryId?: string;
+  // Android-only: routes the push to one of the app's 7 notification channels
+  // (mute-per-category). A value the app hasn't declared is NOT delivered.
+  channelId?: string;
   priority?: 'default' | 'normal' | 'high';
   sound?: string;
-  // Rich media: shows the image in the OS notification on Android (iOS needs a
-  // Notification Service Extension, which the app does NOT have yet).
+  // Rich media: shows the image in the OS notification on Android and, since
+  // the app's iOS Notification Service Extension (Aug 2026 store build), on
+  // iOS too — but only when `mutableContent` also rides along.
   richContent?: { image: string };
   mutableContent?: boolean;
 }
@@ -399,11 +416,13 @@ export async function dispatchNotification(
         body: body.body,
         data,
         categoryId: resolveCategoryId(category),
+        channelId: resolveChannelId(category),
         priority: (body.priority || 'default') as 'default' | 'normal' | 'high',
         sound: 'default',
       };
-      // Image: rendered in the OS notification on Android; on iOS it only shows
-      // inside the app (via data.imageUrl) until an NSE is added.
+      // Image: rendered in the OS notification on Android automatically, and on
+      // iOS via the app's Notification Service Extension — which only runs when
+      // `mutableContent` is set.
       if (body.imageUrl) {
         msg.richContent = { image: body.imageUrl };
         msg.mutableContent = true;
