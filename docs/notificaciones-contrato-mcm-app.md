@@ -17,8 +17,10 @@ Por cada token (`api/_lib/push.ts → dispatchNotification`):
   "sound": "default",
   "priority": "default" | "normal" | "high",
   "categoryId": "general" | "eventos" | "fotos",  // solo estas producen botones iOS
-  "richContent": { "image": "<url>" },  // solo si hay imagen (Android)
-  "mutableContent": true,               // solo si hay imagen (iOS, sin efecto sin NSE)
+  "channelId": "default" | "urgente" | "eventos" | "celebraciones" |
+               "cancionero" | "fotos" | "mantenimiento",  // Android: canal de sonido/silencio
+  "richContent": { "image": "<url>" },  // solo si hay imagen (Android e iOS con NSE)
+  "mutableContent": true,               // solo si hay imagen (obligatorio para que se vea en iOS)
   "data": {
     "id": "<notificationId>",           // crítico: dedup/leído en la app
     "category": "general|eventos|cancionero|fotos|celebraciones|urgente|mantenimiento",
@@ -38,6 +40,15 @@ Por cada token (`api/_lib/push.ts → dispatchNotification`):
   nativos iOS registrados (`general`/`eventos`/`fotos`; `celebraciones` se
   mapea a `eventos`, el resto a `general`). La categoría de negocio viaja en
   `data.category`.
+- **`channelId` (Android, nuevo desde la build de agosto de 2026)**: el panel
+  lo deriva de `data.category` con `resolveChannelId()` (`api/_lib/push.ts`) —
+  mismo valor que la categoría, salvo `general`/desconocida → `default`. Es
+  **obligatorio** mandarlo: la app tiene una lista **cerrada** de 7 canales
+  (uno por categoría) y **descarta silenciosamente** cualquier push con un
+  `channelId` que no haya declarado. Como el desplegable "Categoría" del
+  composer ya solo ofrece esos 7 valores, la derivación es siempre segura.
+  Efecto para el usuario: puede silenciar el cantoral o las fotos sin
+  silenciar los avisos urgentes.
 - **Registro en Firebase**: cada envío crea `/notifications/<id>` (historial
   que la app lee) y las programadas viven en `/scheduledNotifications/<id>`
   (ver `notificaciones-programadas.md`).
