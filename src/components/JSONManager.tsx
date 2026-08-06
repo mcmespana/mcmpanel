@@ -1,19 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Upload, Download, FileJson, Cpu, Save, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AppSidebar } from './AppSidebar';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import { AlbumsSection } from './sections/AlbumsSection';
-import { AppSection } from './sections/AppSection';
-import { CalendarsSection } from './sections/CalendarsSection';
-import { SongsSection } from './sections/SongsSection';
-import { WordleSection } from './sections/WordleSection';
-import { ActivitiesSection } from './sections/ActivitiesSection';
-import { NotificationsSection } from './sections/NotificationsSection';
-import { SurveysSection } from './sections/SurveysSection';
-import { UsersSection } from './sections/UsersSection';
-import { ProfileConfigSection } from './sections/ProfileConfigSection';
 import type { ProfileConfigDocument } from '@/types/profileConfig';
 import { SEED_PROFILE_CONFIG } from '@/lib/profileConfigSeed';
 import { disableAppReviewMode, enableAppReviewMode } from '@/lib/appReviewMode';
@@ -28,6 +18,19 @@ import {
 import { cn } from '@/lib/utils';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SECTION_META, pathForSection, sectionForPath, type SectionId } from '@/lib/sections';
+
+// Cada sección se carga en su propio chunk: el admin solo ve una a la vez, y
+// el bundle inicial no necesita traer recharts, dnd-kit, etc. de todas ellas.
+const AlbumsSection = lazy(() => import('./sections/AlbumsSection').then((m) => ({ default: m.AlbumsSection })));
+const AppSection = lazy(() => import('./sections/AppSection').then((m) => ({ default: m.AppSection })));
+const CalendarsSection = lazy(() => import('./sections/CalendarsSection').then((m) => ({ default: m.CalendarsSection })));
+const SongsSection = lazy(() => import('./sections/SongsSection').then((m) => ({ default: m.SongsSection })));
+const WordleSection = lazy(() => import('./sections/WordleSection').then((m) => ({ default: m.WordleSection })));
+const ActivitiesSection = lazy(() => import('./sections/ActivitiesSection').then((m) => ({ default: m.ActivitiesSection })));
+const NotificationsSection = lazy(() => import('./sections/NotificationsSection').then((m) => ({ default: m.NotificationsSection })));
+const SurveysSection = lazy(() => import('./sections/SurveysSection').then((m) => ({ default: m.SurveysSection })));
+const UsersSection = lazy(() => import('./sections/UsersSection').then((m) => ({ default: m.UsersSection })));
+const ProfileConfigSection = lazy(() => import('./sections/ProfileConfigSection').then((m) => ({ default: m.ProfileConfigSection })));
 
 export type JSONData = {
   albums?: any;
@@ -115,6 +118,11 @@ export function JSONManager() {
         const data = JSON.parse(e.target?.result as string);
         setJsonData(data);
         setDirty(true);
+        // Sin esto el import se ve en pantalla pero "Guardar" no escribe nada:
+        // writePending() solo escribe las claves presentes en pendingUpdates.
+        for (const key of Object.keys(data)) {
+          pendingUpdates.current[key] = data[key];
+        }
         toast({ title: "JSON cargado correctamente", description: "El archivo se ha importado exitosamente" });
       } catch {
         toast({ title: "Error al cargar JSON", description: "El archivo no es un JSON válido", variant: "destructive" });
@@ -165,25 +173,30 @@ export function JSONManager() {
     });
   };
 
-  const writePending = async () => {
+  // Escribe un snapshot congelado de pendingUpdates/pendingActivityPaths (no
+  // las refs en vivo): si el admin edita mientras este await está en curso,
+  // esas ediciones nuevas deben sobrevivir al cleanup posterior en el caller.
+  const writePending = async (
+    updatesSnapshot: Record<string, any>,
+    activityPathsSnapshot: Set<string>,
+  ) => {
     const db = getDB();
 
     // B4: escrituras granulares de Actividades/Jubileo. En vez de `set()` del
     // nodo completo (que pisaría evaluacion/respuestas y compartiendo que
     // escribe la app), hacemos un único `update()` multi-path con SOLO las
-    // subrutas que el admin editó. Los valores se resuelven de las copias
-    // pendientes (protegidas del refresco remoto por el listener de la raíz).
+    // subrutas que el admin editó. Los valores se resuelven del snapshot.
     const granularWrites = buildGranularActivityWrites(
-      [...pendingActivityPaths.current],
-      pendingUpdates.current['activities'],
-      pendingUpdates.current['jubileo'],
+      [...activityPathsSnapshot],
+      updatesSnapshot['activities'],
+      updatesSnapshot['jubileo'],
     );
-    const wroteActivities = pendingActivityPaths.current.size > 0;
+    const wroteActivities = activityPathsSnapshot.size > 0;
     if (Object.keys(granularWrites).length > 0) {
       await update(ref(db, '/'), granularWrites);
     }
 
-    const entries = Object.entries(pendingUpdates.current);
+    const entries = Object.entries(updatesSnapshot);
     for (const [key, value] of entries) {
       // Actividades/Jubileo ya se escribieron granularmente arriba (si hubo
       // rutas). Evitamos el `set()` de nodo completo que reintroduciría el
@@ -198,22 +211,37 @@ export function JSONManager() {
         }
         continue;
       }
-      // Escribir SIEMPRE el valor pendiente, no jsonData[key]: jsonData puede
-      // haber sido refrescado por el listener de la raíz entre la edición y el
-      // guardado, y perderíamos el cambio local.
+      // Escribir SIEMPRE el valor del snapshot, no jsonData[key]: jsonData
+      // puede haber sido refrescado por el listener de la raíz entre la
+      // edición y el guardado, y perderíamos el cambio local.
       await set(ref(db, `/${key}`), value);
     }
+  };
+
+  // Congela el estado pendiente actual, lo escribe, y solo entonces borra ESAS
+  // claves/rutas concretas de las refs en vivo. Si llegó una edición nueva
+  // mientras el await estaba en curso, esa edición no estaba en el snapshot y
+  // sobrevive intacta. Devuelve si ya no queda nada pendiente.
+  const flushPending = async (): Promise<boolean> => {
+    const updatesSnapshot = { ...pendingUpdates.current };
+    if (Object.keys(updatesSnapshot).length === 0) return true;
+    const activityPathsSnapshot = new Set(pendingActivityPaths.current);
+
+    await writePending(updatesSnapshot, activityPathsSnapshot);
+
+    for (const key of Object.keys(updatesSnapshot)) delete pendingUpdates.current[key];
+    for (const path of activityPathsSnapshot) pendingActivityPaths.current.delete(path);
+
+    return Object.keys(pendingUpdates.current).length === 0;
   };
 
   const forceSave = async () => {
     if (!jsonData) return;
     try {
       setSaveStatus('saving');
-      await writePending();
+      const allFlushed = await flushPending();
       setSaveStatus('saved');
-      setDirty(false);
-      pendingUpdates.current = {};
-      pendingActivityPaths.current.clear();
+      setDirty(!allFlushed);
       toast({ title: 'Guardado en Firebase', description: 'Los cambios se han sincronizado.' });
     } catch (e) {
       console.error(e);
@@ -222,27 +250,26 @@ export function JSONManager() {
     }
   };
 
-  // Auto-save every 10s when there are pending changes
+  // Auto-save every 10s when there are pending changes. Se crea una sola vez
+  // (no depende de `dirty`/`jsonData`, que cambian en cada snapshot de la raíz
+  // — con heartbeats frecuentes de /pushTokens el intervalo nunca llegaba a
+  // completar un ciclo) y comprueba el estado pendiente en vivo en cada tick.
   useEffect(() => {
-    if (saveTimer.current) window.clearInterval(saveTimer.current);
     saveTimer.current = window.setInterval(() => {
-      if (dirty && jsonData && Object.keys(pendingUpdates.current).length > 0) {
-        setSaveStatus('saving');
-        writePending()
-          .then(() => {
-            setSaveStatus('saved');
-            setDirty(false);
-            pendingUpdates.current = {};
-            pendingActivityPaths.current.clear();
-          })
-          .catch((e) => {
-            console.error(e);
-            setSaveStatus('error');
-          });
-      }
+      if (Object.keys(pendingUpdates.current).length === 0) return;
+      setSaveStatus('saving');
+      flushPending()
+        .then((allFlushed) => {
+          setSaveStatus('saved');
+          setDirty(!allFlushed);
+        })
+        .catch((e) => {
+          console.error(e);
+          setSaveStatus('error');
+        });
     }, 10000) as unknown as number;
     return () => { if (saveTimer.current) window.clearInterval(saveTimer.current); };
-  }, [dirty, jsonData]);
+  }, []);
 
   if (loading) {
     return (
@@ -436,7 +463,9 @@ export function JSONManager() {
           )}
 
           <main className="flex-1 overflow-auto">
-            {renderActiveSection()}
+            <Suspense fallback={<SectionLoadingFallback />}>
+              {renderActiveSection()}
+            </Suspense>
           </main>
         </div>
       </div>
@@ -506,6 +535,15 @@ function StatusChip({
           ? 'pendiente'
           : 'sync'}
       </span>
+    </div>
+  );
+}
+
+/** Shown briefly while a section's chunk downloads (React.lazy). */
+function SectionLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center h-full py-24">
+      <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
     </div>
   );
 }

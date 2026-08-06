@@ -86,7 +86,7 @@ export function AppsSubsection({ data, onUpdate }: AppsSubsectionProps) {
       iosLink: '',
       iosScheme: '',
       nombre: '',
-      tipo: 'Opcional' as const,
+      tipo: 'Opcional' as 'Necesaria' | 'Opcional',
     });
 
     return (

@@ -81,6 +81,7 @@ Reglas de oro al tocar datos:
 ```bash
 npm run dev        # desarrollo (localhost:8080)
 npm run lint       # ESLint
+npm run typecheck  # tsc --noEmit (vite build usa SWC y no comprueba tipos)
 npm run build      # build de producción (vite build)
 npm run preview    # smoke test del build
 ```
@@ -117,7 +118,7 @@ npm run preview    # smoke test del build
 ## Checklist antes de push
 
 ```bash
-npm run lint && npm run build
+npm run lint && npm run typecheck && npm run build
 ```
 
 - ¿Tocaste un contrato de datos? Actualiza el doc correspondiente en `mcmapp/docs/`.

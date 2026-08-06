@@ -25,3 +25,6 @@ server/dist
 *.sw?
 .env
 .env.local
+
+# Dumps de producción (pueden contener datos personales de contactos)
+todoJSON.json
