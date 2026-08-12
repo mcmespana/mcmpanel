@@ -38,6 +38,7 @@ server-side; los endpoints `api/notifications/*` solo protegen el cron con
 | Actividades | `/actividades` | `/activities` (+ legacy `/jubileo`) | Eventos y sus subsecciones. `activities/_meta = { updatedAt, data: { activeEventId } }` marca el evento activo global |
 | Notificaciones | `/notificaciones` | `/notifications`, `/scheduledNotifications`, `/pushTokens` | Composer con audiencia de 4 ejes (todos/perfil/delegación/evento) + programadas |
 | Encuestas | `/encuestas` | `/surveys` | Encuestas/evaluaciones (contrato en mcmapp) |
+| Coros | `/coros` | `/choirs`, `/choirSessions/<choirId>`, `/playlistShares` | Coros de los que cuelgan las playlists compartidas. Los crea la gente desde la app (sin login): aquí se borran, se renombran y se **retoca la fecha** de cada playlist, que es lo que ordena el histórico y decide cuál es «la última». Escribe con `update()`/`remove()` granular, NO por el guardado de nodo completo |
 | Usuarios | `/usuarios` | `/users` | Solo escribe `users/{uid}/isAdmin` |
 | Perfiles | `/perfiles` | `/profileConfig` | Perfiles, delegaciones, overrides, flags globales, modo revisión |
 
@@ -48,6 +49,7 @@ server-side; los endpoints `api/notifications/*` solo protegen el cron con
 | Notificaciones (payload, rutas, topics, `/pushTokens`) | `mcmapp/docs/contratos/NOTIFICACIONES_CONTRATO.md` |
 | Sistema de perfiles (`/profileConfig`) | `mcmapp/docs/contratos/PANEL_PERFILES.md` |
 | Encuestas | `mcmapp/docs/contratos/ENCUESTAS_CONTRATO.md` |
+| Coros y playlists compartidas (`/choirs`) | `mcmapp/docs/funcionalidades/COROS.md` |
 | Eventos (estructura `activities/*`) | `mcmapp/docs/funcionalidades/EVENTOS.md` |
 
 Reglas de oro al tocar datos:
@@ -101,6 +103,7 @@ npm run preview    # smoke test del build
 | Seed de profileConfig | `src/lib/profileConfigSeed.ts` |
 | Modo revisión de stores | `src/lib/appReviewMode.ts` |
 | Encuestas | `src/lib/surveys.ts` |
+| Coros | `src/lib/choirs.ts` + `src/components/sections/ChoirsSection.tsx` |
 
 ## Seguridad (estado real)
 
