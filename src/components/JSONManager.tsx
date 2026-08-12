@@ -29,6 +29,7 @@ const WordleSection = lazy(() => import('./sections/WordleSection').then((m) => 
 const ActivitiesSection = lazy(() => import('./sections/ActivitiesSection').then((m) => ({ default: m.ActivitiesSection })));
 const NotificationsSection = lazy(() => import('./sections/NotificationsSection').then((m) => ({ default: m.NotificationsSection })));
 const SurveysSection = lazy(() => import('./sections/SurveysSection').then((m) => ({ default: m.SurveysSection })));
+const ChoirsSection = lazy(() => import('./sections/ChoirsSection').then((m) => ({ default: m.ChoirsSection })));
 const UsersSection = lazy(() => import('./sections/UsersSection').then((m) => ({ default: m.UsersSection })));
 const ProfileConfigSection = lazy(() => import('./sections/ProfileConfigSection').then((m) => ({ default: m.ProfileConfigSection })));
 
@@ -361,6 +362,8 @@ export function JSONManager() {
         return <NotificationsSection />;
       case 'surveys':
         return <SurveysSection />;
+      case 'choirs':
+        return <ChoirsSection />;
       case 'users':
         return <UsersSection />;
       case 'profileConfig':

@@ -9,6 +9,7 @@ import {
   Zap,
   Bell,
   Users,
+  Users2,
   UserCog,
   ClipboardList,
   type LucideIcon,
@@ -28,6 +29,7 @@ export type SectionId =
   | 'songs'
   | 'wordle'
   | 'activities'
+  | 'choirs'
   | 'notifications'
   | 'surveys'
   | 'users'
@@ -108,6 +110,13 @@ export const SECTION_META: Record<SectionId, SectionMeta> = {
     slug: 'actividades',
     icon: Zap,
   },
+  choirs: {
+    id: 'choirs',
+    title: 'Coros',
+    description: 'Coros y playlists compartidas',
+    slug: 'coros',
+    icon: Users2,
+  },
   users: {
     id: 'users',
     title: 'Usuarios',
@@ -132,6 +141,7 @@ export const SECTION_ORDER: SectionId[] = [
   'songs',
   'wordle',
   'activities',
+  'choirs',
   'notifications',
   'surveys',
   'users',
@@ -164,7 +174,16 @@ export function sectionForPath(pathname: string): SectionId {
  * stored blob (it acts on a live queue), so it always counts as present.
  */
 export function sectionHasData(jsonData: JSONData, id: SectionId): boolean {
-  if (id === 'notifications' || id === 'home' || id === 'surveys' || id === 'users') return true;
+  // Estas secciones se suscriben ellas mismas a su nodo (o no tienen blob
+  // guardado), así que no se puede saber si "tienen datos" desde `jsonData`.
+  if (
+    id === 'notifications' ||
+    id === 'home' ||
+    id === 'surveys' ||
+    id === 'users' ||
+    id === 'choirs'
+  )
+    return true;
   const value = jsonData[id as keyof JSONData] as unknown;
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
