@@ -205,6 +205,20 @@ export function JSONManager() {
       if ((key === 'activities' || key === 'jubileo') && wroteActivities) {
         continue;
       }
+      if (key === 'app') {
+        // `/app` mezcla lo que edita el panel (`feedback`) con lo que escribe
+        // la app (`evaluations/<deviceId>`) y lo que gestiona la seccion
+        // Encuestas (`evaluationConfig`). Un `set()` de nodo completo los
+        // borraba de un guardado, asi que escribimos SOLO las subrutas que son
+        // de esta seccion. Mismo criterio que B4 con Actividades.
+        if (value && typeof value === 'object') {
+          const appWrites: Record<string, unknown> = {};
+          if (value.feedback !== undefined) appWrites['app/feedback'] = value.feedback;
+          if (value.updatedAt !== undefined) appWrites['app/updatedAt'] = value.updatedAt;
+          if (Object.keys(appWrites).length > 0) await update(ref(db, '/'), appWrites);
+        }
+        continue;
+      }
       if (key === 'wordle') {
         if (value && typeof value === 'object') {
           if (value['daily-words'] !== undefined) await set(ref(db, '/wordle/daily-words'), value['daily-words']);

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Plus, Trash2, Edit3, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, Edit3, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,7 +25,11 @@ import {
   TAB_LABELS,
   slugify,
 } from '@/lib/profileCatalog';
-import type { Delegation, ProfileConfigData } from '@/types/profileConfig';
+import type {
+  Delegation,
+  DelegationListItem,
+  ProfileConfigData,
+} from '@/types/profileConfig';
 
 interface DelegationsEditorProps {
   data: ProfileConfigData;
@@ -36,8 +40,26 @@ interface DelegationsEditorProps {
 interface EditingDelegation {
   id: string;
   isNew: boolean;
-  hidden: boolean; // not in delegationList
   delegation: Delegation;
+}
+
+/**
+ * C1 del PLAN_INTEGRACIONES. `delegationList` era una segunda lista que había
+ * que mantener a mano y que la app IGNORA: se la deriva sola de `delegations`
+ * (ver mcm-app/contexts/ProfileConfigContext.tsx → deriveDelegationList). El
+ * panel llegaba a ofrecer un interruptor "mostrar en el selector" que no hacía
+ * nada en la app.
+ *
+ * Aquí se deriva con las MISMAS reglas que la app (todo menos `_default`, en
+ * orden de inserción del objeto). El nodo se sigue escribiendo porque el
+ * composer de notificaciones lo lee (`NotificationsSection.tsx`).
+ */
+function deriveDelegationList(
+  delegations: ProfileConfigData['delegations'],
+): DelegationListItem[] {
+  return Object.entries(delegations ?? {})
+    .filter(([id]) => id !== '_default')
+    .map(([id, d]) => ({ id, label: d.label }));
 }
 
 const EMPTY_DELEGATION: Delegation = { label: '' };
@@ -47,8 +69,6 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
   const { toast } = useToast();
 
   const delegations = data.delegations ?? ({ _default: { label: 'General' } } as ProfileConfigData['delegations']);
-  const list = data.delegationList ?? [];
-  const listIds = useMemo(() => new Set(list.map((d) => d.id)), [list]);
 
   const allIds = Object.keys(delegations).sort((a, b) => {
     if (a === '_default') return -1;
@@ -60,7 +80,6 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
     setEditing({
       id,
       isNew: false,
-      hidden: id !== '_default' && !listIds.has(id),
       delegation: { ...EMPTY_DELEGATION, ...delegations[id] },
     });
   };
@@ -69,7 +88,6 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
     setEditing({
       id: '',
       isNew: true,
-      hidden: false,
       delegation: { ...EMPTY_DELEGATION },
     });
   };
@@ -101,19 +119,11 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
 
     const nextDelegations = { ...delegations, [id]: clean } as ProfileConfigData['delegations'];
 
-    let nextList = [...list];
-    const inList = listIds.has(id);
-    if (id !== '_default') {
-      if (e.hidden && inList) {
-        nextList = nextList.filter((d) => d.id !== id);
-      } else if (!e.hidden && !inList) {
-        nextList.push({ id, label: clean.label });
-      } else if (!e.hidden && inList) {
-        nextList = nextList.map((d) => (d.id === id ? { id, label: clean.label } : d));
-      }
-    }
-
-    onChange({ ...data, delegations: nextDelegations, delegationList: nextList });
+    onChange({
+      ...data,
+      delegations: nextDelegations,
+      delegationList: deriveDelegationList(nextDelegations),
+    });
     setEditing(null);
     toast({ title: 'Delegación guardada' });
   };
@@ -131,10 +141,11 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
     Object.keys(nextOverrides).forEach((key) => {
       if (key.endsWith(`:${id}`)) delete nextOverrides[key as keyof typeof nextOverrides];
     });
+    const nextDelegations = rest as ProfileConfigData['delegations'];
     onChange({
       ...data,
-      delegations: rest as ProfileConfigData['delegations'],
-      delegationList: list.filter((d) => d.id !== id),
+      delegations: nextDelegations,
+      delegationList: deriveDelegationList(nextDelegations),
       overrides: nextOverrides,
     });
     toast({ title: 'Delegación eliminada' });
@@ -146,7 +157,7 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
         <div>
           <h3 className="text-base font-semibold">Delegaciones</h3>
           <p className="text-xs text-muted-foreground">
-            {allIds.length} delegaciones · {list.length} en selector
+            {allIds.length} delegaciones · todas seleccionables en el onboarding
           </p>
         </div>
         <Button onClick={handleNew} size="sm">
@@ -159,7 +170,6 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
         {allIds.map((id) => {
           const d = delegations[id];
           const isDefault = id === '_default';
-          const inList = listIds.has(id);
           const hasExtras =
             !!d.notificationTopic ||
             !!d.extraCalendars?.length ||
@@ -182,11 +192,6 @@ export function DelegationsEditor({ data, calendars, onChange }: DelegationsEdit
                     {isDefault && (
                       <span className="text-[10px] bg-primary/15 text-primary px-1.5 rounded">
                         default
-                      </span>
-                    )}
-                    {!isDefault && !inList && (
-                      <span className="text-[10px] bg-muted/60 text-muted-foreground px-1.5 rounded inline-flex items-center gap-1">
-                        <EyeOff className="w-3 h-3" /> oculta
                       </span>
                     )}
                     {hasExtras && (
@@ -320,28 +325,6 @@ function DelegationDialog({ editing, calendars, onSave, onCancel, onChange }: De
               />
             </div>
           </div>
-
-          {!isDefault && (
-            <div className="flex items-center justify-between rounded-md border border-border/40 px-3 py-2">
-              <div className="flex items-center gap-2">
-                {editing.hidden ? (
-                  <EyeOff className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="w-4 h-4 text-muted-foreground" />
-                )}
-                <div>
-                  <Label className="text-sm">Mostrar en selector de onboarding</Label>
-                  <p className="text-[10px] text-muted-foreground">
-                    Si está oculta, el usuario no podrá seleccionarla.
-                  </p>
-                </div>
-              </div>
-              <Switch
-                checked={!editing.hidden}
-                onCheckedChange={(v) => onChange({ ...editing, hidden: !v })}
-              />
-            </div>
-          )}
 
           <div>
             <Label htmlFor="del-topic">Topic de notificaciones</Label>

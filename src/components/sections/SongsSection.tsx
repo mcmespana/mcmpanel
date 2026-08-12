@@ -56,7 +56,22 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
   const [editingSongIndex, setEditingSongIndex] = useState<number>(-1);
   const [draggedIndex, setDraggedIndex] = useState<number>(-1);
   const [showDoneFallitos, setShowDoneFallitos] = useState(false);
+  // E1: la edicion del cantoral esta deprecada (la fuente de verdad es el repo
+  // mcmapp-cantoral, que hace PUT completo de songs/data en cada push). No se
+  // bloquea, pero se avisa ANTES de entrar. Una vez aceptado, no se vuelve a
+  // preguntar en lo que dure la sesion.
+  const [editWarningFor, setEditWarningFor] = useState<string | null>(null);
+  const [editWarningAccepted, setEditWarningAccepted] = useState(false);
   const { toast } = useToast();
+
+  const openCategory = (categoryKey: string) => {
+    if (!editWarningAccepted) {
+      setEditWarningFor(categoryKey);
+      return;
+    }
+    setSelectedCategory(categoryKey);
+    setViewMode('songs');
+  };
 
   const categories = data?.data || {};
   const sortedCategories = Object.entries(categories).sort(([, a], [, b]) => 
@@ -640,10 +655,7 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
             <Card 
               key={categoryKey}
               className="bg-card/50 backdrop-blur-sm border-border/50 shadow-tech hover:shadow-glow transition-all duration-200 cursor-pointer group"
-              onClick={() => {
-                setSelectedCategory(categoryKey);
-                setViewMode('songs');
-              }}
+              onClick={() => openCategory(categoryKey)}
             >
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center justify-between text-foreground group-hover:text-primary transition-colors">
@@ -680,6 +692,58 @@ export function SongsSection({ data, onUpdate }: SongsSectionProps) {
             </CardContent>
           </Card>
         )}
+
+        {/* E1: aviso previo a entrar a editar. No bloquea — informa de que lo
+            que se toque aqui lo pisa el siguiente push del repo del cantoral, y
+            deja entrar a quien asuma el riesgo. */}
+        <Dialog open={editWarningFor !== null} onOpenChange={(open) => { if (!open) setEditWarningFor(null); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-warning" />
+                El cantoral ya no se edita aqui
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                Las canciones se mantienen en el repositorio{' '}
+                <span className="font-medium text-foreground">mcmapp-cantoral</span>, en
+                ficheros ChordPro. Cada push a <code className="bg-muted px-1 py-0.5 rounded">main</code>{' '}
+                regenera el cantoral y <span className="font-medium text-foreground">sobrescribe entero</span>{' '}
+                <code className="bg-muted px-1 py-0.5 rounded">songs/data</code> en Firebase.
+              </p>
+              <p>
+                Es decir: lo que edites, crees, borres o reordenes desde aqui{' '}
+                <span className="font-medium text-foreground">se perdera</span> en el
+                siguiente push, sin avisar. Si el cambio tiene que durar, hazlo en el repo.
+              </p>
+              <p className="text-xs">
+                Lo que si es de este panel son los <span className="font-medium">fallitos</span> y las{' '}
+                <span className="font-medium">solicitudes</span>: esos no los toca el repo.
+              </p>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setEditWarningFor(null)}>
+                Cancelar
+              </Button>
+              <Button
+                variant="outline"
+                className="border-warning/50 text-warning hover:bg-warning/10"
+                onClick={() => {
+                  const categoryKey = editWarningFor;
+                  setEditWarningAccepted(true);
+                  setEditWarningFor(null);
+                  if (categoryKey) {
+                    setSelectedCategory(categoryKey);
+                    setViewMode('songs');
+                  }
+                }}
+              >
+                Entrar de todas formas
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

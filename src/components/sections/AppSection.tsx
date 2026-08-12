@@ -43,7 +43,14 @@ export function AppSection({ data, onUpdate }: AppSectionProps) {
   const [justSaved, setJustSaved] = useState(false);
 
   const saveChanges = () => {
+    // OJO: `/app` no es solo `feedback`. Del mismo nodo cuelgan `evaluations`
+    // (las respuestas de la evaluacion de la app, que escriben los propios
+    // dispositivos) y `evaluationConfig` (que gestiona la seccion Encuestas).
+    // Mandar aqui solo `{ feedback }` los borraba: el guardado hacia
+    // `set('/app', valor)` con este objeto y el resto del nodo desaparecia de
+    // Firebase. Se conserva intacto todo lo que no edita esta seccion.
     onUpdate({
+      ...(data ?? {}),
       feedback,
       updatedAt: new Date().toISOString()
     });

@@ -8,6 +8,7 @@ import { DelegationsEditor } from './profile/DelegationsEditor';
 import { OverridesEditor } from './profile/OverridesEditor';
 import { SystemEditor } from './profile/SystemEditor';
 import { SEED_PROFILE_CONFIG } from '@/lib/profileConfigSeed';
+import { slugify } from '@/lib/profileCatalog';
 import { useToast } from '@/hooks/use-toast';
 import type { ProfileConfigData, ProfileConfigDocument } from '@/types/profileConfig';
 
@@ -94,28 +95,73 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
     );
   }
 
-  // Validation summary
+  // Validation summary.
+  //
+  // C4 del PLAN_INTEGRACIONES. Se separan en dos cubos porque no son lo mismo:
+  //   · `errors`   → configuración que la app NUNCA va a aplicar. No se nota al
+  //     usarla (no falla nada, simplemente no pasa lo que esperabas), así que
+  //     es justo lo que hay que gritar.
+  //   · `warnings` → sospechoso pero puede ser intencionado.
+  // Esta sección no tiene botón de guardar (cada edición se encola sola), así
+  // que no se puede "bloquear el guardado": lo que se hace es hacerlo visible.
+  const errors: string[] = [];
   const warnings: string[] = [];
+
   Object.entries(draft.profiles ?? {}).forEach(([type, p]) => {
     if (!p.tabs?.length) warnings.push(`Perfil "${type}" no tiene tabs.`);
+    // La app arranca en `defaultTab` y espera la Home entre las tabs.
+    if (p.tabs?.length && !p.tabs.includes('index')) {
+      warnings.push(`Perfil "${type}": sus tabs no incluyen "index" (la Home).`);
+    }
     p.defaultCalendars?.forEach((id) => {
       if (!calendars.some((c) => c.id === id)) {
         warnings.push(`Perfil "${type}": calendario "${id}" no existe en /calendars.`);
       }
     });
   });
-  // Inconsistencies between delegations & delegationList
-  const listIds = new Set((draft.delegationList ?? []).map((d) => d.id));
-  Object.keys(draft.delegations ?? {}).forEach((id) => {
-    if (id !== '_default' && !listIds.has(id)) {
-      warnings.push(`Delegación "${id}" no aparece en delegationList (no se podrá seleccionar).`);
+
+  // Claves de override: la app las busca EXACTAMENTE como `perfil:delegacion`
+  // (utils/resolveProfileConfig.ts). Un typo no da error en ningún sitio: el
+  // override simplemente no se aplica nunca.
+  const knownProfiles = Object.keys(draft.profiles ?? {});
+  Object.keys(draft.overrides ?? {}).forEach((key) => {
+    const parts = key.split(':');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      errors.push(`Override "${key}": el formato debe ser "perfil:delegacion". No se aplicará.`);
+      return;
+    }
+    const [profileType, delegationId] = parts;
+    if (!knownProfiles.includes(profileType)) {
+      errors.push(`Override "${key}": el perfil "${profileType}" no existe. No se aplicará.`);
+    }
+    if (!draft.delegations?.[delegationId]) {
+      errors.push(`Override "${key}": la delegación "${delegationId}" no existe. No se aplicará.`);
     }
   });
-  (draft.delegationList ?? []).forEach((d) => {
-    if (!draft.delegations?.[d.id]) {
-      warnings.push(`delegationList contiene "${d.id}" pero no existe en delegations.`);
+
+  // minAppVersion: la app es "fail-open" a propósito (un semver inválido NO
+  // bloquea a nadie), así que un valor mal escrito no rompe nada — pero te deja
+  // creyendo que tienes un kill-switch que en realidad no existe.
+  const minVersion = draft.global?.minAppVersion?.trim();
+  if (minVersion && !/^\d+\.\d+\.\d+$/.test(minVersion)) {
+    errors.push(
+      `minAppVersion "${minVersion}" no es un semver X.Y.Z: la app lo ignora y no bloqueará ninguna versión.`,
+    );
+  }
+
+  // Los topics de push no admiten espacios/acentos/mayúsculas. El editor ya
+  // slugifica al guardar, pero un JSON importado a mano puede traerlos sucios.
+  Object.entries(draft.delegations ?? {}).forEach(([id, d]) => {
+    const topic = d?.notificationTopic;
+    if (topic && topic !== slugify(topic)) {
+      errors.push(
+        `Delegación "${id}": el topic "${topic}" no es válido (debería ser "${slugify(topic)}").`,
+      );
     }
   });
+  // C1: `delegationList` ya no se mantiene a mano — se deriva de `delegations`
+  // al guardar (DelegationsEditor), igual que hace la app. Los dos avisos de
+  // desincronización que había aquí ya no pueden dispararse.
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -136,6 +182,24 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
           Descargar JSON
         </Button>
       </div>
+
+      {errors.length > 0 && (
+        <Card className="p-3 bg-destructive/5 border-destructive/40">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
+            <div className="text-xs space-y-0.5">
+              <p className="font-semibold text-destructive">
+                {errors.length} {errors.length === 1 ? 'problema' : 'problemas'} que la app va a ignorar en silencio:
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
+                {errors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {warnings.length > 0 && (
         <Card className="p-3 bg-warning/5 border-warning/40">
