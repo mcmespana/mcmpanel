@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Database, Download, RotateCcw } from 'lucide-react';
+import { AlertCircle, Database, Download, RotateCcw, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,7 +8,7 @@ import { DelegationsEditor } from './profile/DelegationsEditor';
 import { OverridesEditor } from './profile/OverridesEditor';
 import { SystemEditor } from './profile/SystemEditor';
 import { SEED_PROFILE_CONFIG } from '@/lib/profileConfigSeed';
-import { slugify } from '@/lib/profileCatalog';
+import { validateProfileConfig } from '@/lib/profileConfigValidation';
 import { useToast } from '@/hooks/use-toast';
 import type { ProfileConfigData, ProfileConfigDocument } from '@/types/profileConfig';
 
@@ -27,10 +27,18 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
     data?.data ? sanitizeData(data.data) : null,
   );
 
+  // C4: hay ediciones en el borrador que NO se han guardado porque la
+  // validación las bloqueó. Mientras esté a true, este componente es la única
+  // copia de esos cambios: no hay nada en `pendingUpdates` del JSONManager.
+  const [blockedEdits, setBlockedEdits] = useState(false);
+
   // Sync draft when external data changes (real-time from Firebase)
   useEffect(() => {
+    // Con ediciones bloqueadas sin guardar, un refresco remoto se las llevaría
+    // por delante justo mientras el admin intenta arreglar el error.
+    if (blockedEdits) return;
     if (data?.data) setDraft(sanitizeData(data.data));
-  }, [data?.updatedAt]);
+  }, [data?.updatedAt, blockedEdits]);
 
   const handleInit = () => {
     if (!confirm('¿Inicializar /profileConfig con el seed por defecto?')) return;
@@ -39,6 +47,7 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
       data: SEED_PROFILE_CONFIG,
     };
     setDraft(SEED_PROFILE_CONFIG);
+    setBlockedEdits(false);
     onUpdate(seedDoc);
   };
 
@@ -61,6 +70,27 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
 
   const handleChange = (next: ProfileConfigData) => {
     setDraft(next);
+
+    // C4: si la configuración tiene errores, el cambio NO sale de aquí. Se
+    // queda en el borrador local para que el admin pueda arreglarlo (los
+    // editores siguen funcionando: escriben sobre `draft`), y en cuanto la
+    // validación quede limpia, el `onUpdate` de esa edición lleva el borrador
+    // ENTERO — o sea, también lo que se bloqueó por el camino.
+    const { errors } = validateProfileConfig(next, calendars);
+    if (errors.length > 0) {
+      if (!blockedEdits) {
+        toast({
+          title: 'Cambios sin guardar',
+          description:
+            'Hay configuración que la app ignoraría en silencio. Arregla los problemas y se guardará todo junto.',
+          variant: 'destructive',
+        });
+      }
+      setBlockedEdits(true);
+      return;
+    }
+
+    setBlockedEdits(false);
     onUpdate({
       updatedAt: new Date().toISOString(),
       data: next,
@@ -95,73 +125,9 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
     );
   }
 
-  // Validation summary.
-  //
-  // C4 del PLAN_INTEGRACIONES. Se separan en dos cubos porque no son lo mismo:
-  //   · `errors`   → configuración que la app NUNCA va a aplicar. No se nota al
-  //     usarla (no falla nada, simplemente no pasa lo que esperabas), así que
-  //     es justo lo que hay que gritar.
-  //   · `warnings` → sospechoso pero puede ser intencionado.
-  // Esta sección no tiene botón de guardar (cada edición se encola sola), así
-  // que no se puede "bloquear el guardado": lo que se hace es hacerlo visible.
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  Object.entries(draft.profiles ?? {}).forEach(([type, p]) => {
-    if (!p.tabs?.length) warnings.push(`Perfil "${type}" no tiene tabs.`);
-    // La app arranca en `defaultTab` y espera la Home entre las tabs.
-    if (p.tabs?.length && !p.tabs.includes('index')) {
-      warnings.push(`Perfil "${type}": sus tabs no incluyen "index" (la Home).`);
-    }
-    p.defaultCalendars?.forEach((id) => {
-      if (!calendars.some((c) => c.id === id)) {
-        warnings.push(`Perfil "${type}": calendario "${id}" no existe en /calendars.`);
-      }
-    });
-  });
-
-  // Claves de override: la app las busca EXACTAMENTE como `perfil:delegacion`
-  // (utils/resolveProfileConfig.ts). Un typo no da error en ningún sitio: el
-  // override simplemente no se aplica nunca.
-  const knownProfiles = Object.keys(draft.profiles ?? {});
-  Object.keys(draft.overrides ?? {}).forEach((key) => {
-    const parts = key.split(':');
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      errors.push(`Override "${key}": el formato debe ser "perfil:delegacion". No se aplicará.`);
-      return;
-    }
-    const [profileType, delegationId] = parts;
-    if (!knownProfiles.includes(profileType)) {
-      errors.push(`Override "${key}": el perfil "${profileType}" no existe. No se aplicará.`);
-    }
-    if (!draft.delegations?.[delegationId]) {
-      errors.push(`Override "${key}": la delegación "${delegationId}" no existe. No se aplicará.`);
-    }
-  });
-
-  // minAppVersion: la app es "fail-open" a propósito (un semver inválido NO
-  // bloquea a nadie), así que un valor mal escrito no rompe nada — pero te deja
-  // creyendo que tienes un kill-switch que en realidad no existe.
-  const minVersion = draft.global?.minAppVersion?.trim();
-  if (minVersion && !/^\d+\.\d+\.\d+$/.test(minVersion)) {
-    errors.push(
-      `minAppVersion "${minVersion}" no es un semver X.Y.Z: la app lo ignora y no bloqueará ninguna versión.`,
-    );
-  }
-
-  // Los topics de push no admiten espacios/acentos/mayúsculas. El editor ya
-  // slugifica al guardar, pero un JSON importado a mano puede traerlos sucios.
-  Object.entries(draft.delegations ?? {}).forEach(([id, d]) => {
-    const topic = d?.notificationTopic;
-    if (topic && topic !== slugify(topic)) {
-      errors.push(
-        `Delegación "${id}": el topic "${topic}" no es válido (debería ser "${slugify(topic)}").`,
-      );
-    }
-  });
-  // C1: `delegationList` ya no se mantiene a mano — se deriva de `delegations`
-  // al guardar (DelegationsEditor), igual que hace la app. Los dos avisos de
-  // desincronización que había aquí ya no pueden dispararse.
+  // C4: misma función que usa la puerta de guardado de `handleChange`, para
+  // que lo que se pinta y lo que se bloquea no puedan discrepar nunca.
+  const { errors, warnings } = validateProfileConfig(draft, calendars);
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -186,16 +152,28 @@ export function ProfileConfigSection({ data, calendarsRoot, onUpdate }: ProfileC
       {errors.length > 0 && (
         <Card className="p-3 bg-destructive/5 border-destructive/40">
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-            <div className="text-xs space-y-0.5">
+            <ShieldAlert className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
               <p className="font-semibold text-destructive">
-                {errors.length} {errors.length === 1 ? 'problema' : 'problemas'} que la app va a ignorar en silencio:
+                {blockedEdits ? 'Guardado en pausa · ' : ''}
+                {errors.length} {errors.length === 1 ? 'problema' : 'problemas'} que la app ignoraría en silencio:
               </p>
               <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
                 {errors.map((e, i) => (
                   <li key={i}>{e}</li>
                 ))}
               </ul>
+              {blockedEdits ? (
+                <p className="text-destructive/90 pt-0.5">
+                  Tus cambios <span className="font-semibold">no se están guardando</span> y se
+                  perderán si recargas. En cuanto no quede ningún problema se guardará todo junto.
+                </p>
+              ) : (
+                <p className="text-muted-foreground pt-0.5">
+                  Esto ya está así en Firebase. Cualquier cambio que hagas quedará en pausa hasta
+                  que se arregle.
+                </p>
+              )}
             </div>
           </div>
         </Card>
