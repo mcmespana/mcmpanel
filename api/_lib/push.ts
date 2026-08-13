@@ -49,33 +49,73 @@ export function getFirebaseDbUrl(): string {
 
 // ─── Firebase REST helpers ───────────────────────────────────────────────────
 
+// Credencial de servidor OPCIONAL. La REST API de la RTDB acepta `?auth=<secret>`
+// y, con él, IGNORA las reglas de seguridad — que es justo lo que necesitan estas
+// funciones para leer `/pushTokens` y escribir `/notifications`.
+//
+// Sin la variable todo funciona exactamente igual que antes (peticiones
+// anónimas), así que esto se puede desplegar sin coordinar nada. Ponerla en
+// Vercel es lo que permite apagar `/_config/legacyNotificationsOpen` en la base
+// de datos y dejar `/pushTokens` sin ser enumerable desde fuera.
+//
+// Secret: consola de Firebase → Configuración del proyecto → Cuentas de
+// servicio → Secretos de base de datos. Mismo mecanismo que ya usa el uploader
+// del cantoral (`mcmapp-cantoral/scripts/update_firebase.py`).
+const FIREBASE_DB_SECRET = process.env.FIREBASE_DB_SECRET || '';
+
+/** `<url><path>.json` con el `?auth=` puesto si hay secret. */
+function dbUrl(path: string): string {
+  const base = `${FIREBASE_DB_URL}${path}.json`;
+  if (!FIREBASE_DB_SECRET) return base;
+  return `${base}?auth=${encodeURIComponent(FIREBASE_DB_SECRET)}`;
+}
+
+/**
+ * Un 401/403 de la RTDB es "las reglas no me dejan", no "se ha caído". Se
+ * distingue en el mensaje para que en los logs de Vercel se vea de un vistazo
+ * si lo que falta es el secret o si de verdad hay un problema.
+ */
+function describeFailure(op: string, path: string, status: number): string {
+  if (status === 401 || status === 403) {
+    return (
+      `Firebase ${op} ${path} DENEGADO POR REGLAS (${status}). ` +
+      (FIREBASE_DB_SECRET
+        ? 'El FIREBASE_DB_SECRET configurado no es válido o ha sido revocado.'
+        : 'No hay FIREBASE_DB_SECRET configurado en Vercel y las reglas ya no ' +
+          'permiten el acceso anónimo. Ponlo, o vuelve a activar ' +
+          '/_config/legacyNotificationsOpen en la base de datos.')
+    );
+  }
+  return `Firebase ${op} ${path} failed: ${status}`;
+}
+
 export async function firebaseGet<T = unknown>(path: string): Promise<T | null> {
-  const res = await fetch(`${FIREBASE_DB_URL}${path}.json`);
-  if (!res.ok) throw new Error(`Firebase GET ${path} failed: ${res.status}`);
+  const res = await fetch(dbUrl(path));
+  if (!res.ok) throw new Error(describeFailure('GET', path, res.status));
   return res.json() as Promise<T | null>;
 }
 
 export async function firebaseSet(path: string, data: unknown): Promise<void> {
-  const res = await fetch(`${FIREBASE_DB_URL}${path}.json`, {
+  const res = await fetch(dbUrl(path), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Firebase SET ${path} failed: ${res.status}`);
+  if (!res.ok) throw new Error(describeFailure('SET', path, res.status));
 }
 
 export async function firebasePatch(path: string, data: Record<string, unknown>): Promise<void> {
-  const res = await fetch(`${FIREBASE_DB_URL}${path}.json`, {
+  const res = await fetch(dbUrl(path), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Firebase PATCH ${path} failed: ${res.status}`);
+  if (!res.ok) throw new Error(describeFailure('PATCH', path, res.status));
 }
 
 export async function firebaseDelete(path: string): Promise<void> {
-  const res = await fetch(`${FIREBASE_DB_URL}${path}.json`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Firebase DELETE ${path} failed: ${res.status}`);
+  const res = await fetch(dbUrl(path), { method: 'DELETE' });
+  if (!res.ok) throw new Error(describeFailure('DELETE', path, res.status));
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { getDB } from '@/lib/firebase';
 import { get, ref, remove, update } from 'firebase/database';
+import { guardWrite } from '@/lib/firebaseRules';
 
 /**
  * Lectura y escritura del nodo `/choirs` — los **coros** de la app.
@@ -197,11 +198,13 @@ export async function fetchPlaylistSongs(code: string): Promise<string[]> {
 export async function renameChoir(choirId: string, name: string): Promise<void> {
   const clean = (name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
   if (clean.length < 3) throw new Error('El nombre es demasiado corto');
-  await update(ref(getDB(), `${ROOT}/${choirId}`), {
-    name: clean,
-    nameKey: choirNameKey(clean),
-    updatedAt: Date.now(),
-  });
+  await guardWrite(`${ROOT}/${choirId}`, 'Coros', () =>
+    update(ref(getDB(), `${ROOT}/${choirId}`), {
+      name: clean,
+      nameKey: choirNameKey(clean),
+      updatedAt: Date.now(),
+    }),
+  );
 }
 
 /**
@@ -210,7 +213,9 @@ export async function renameChoir(choirId: string, name: string): Promise<void> 
  * código apuntado, su enlace sigue funcionando aunque el coro ya no exista.
  */
 export async function deleteChoir(choirId: string): Promise<void> {
-  await remove(ref(getDB(), `${ROOT}/${choirId}`));
+  await guardWrite(`${ROOT}/${choirId}`, 'Coros', () =>
+    remove(ref(getDB(), `${ROOT}/${choirId}`)),
+  );
 }
 
 /** Renombra una playlist dentro del coro (no toca su contenido). */
@@ -221,10 +226,12 @@ export async function renameChoirPlaylist(
 ): Promise<void> {
   const clean = (name ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
   if (!clean) throw new Error('El nombre no puede quedar vacío');
-  await update(ref(getDB(), `${ROOT}/${choirId}`), {
-    [`playlists/${code}/name`]: clean,
-    updatedAt: Date.now(),
-  });
+  await guardWrite(`${ROOT}/${choirId}`, 'Coros', () =>
+    update(ref(getDB(), `${ROOT}/${choirId}`), {
+      [`playlists/${code}/name`]: clean,
+      updatedAt: Date.now(),
+    }),
+  );
 }
 
 /**
@@ -238,10 +245,12 @@ export async function setChoirPlaylistDate(
   updatedAt: number,
 ): Promise<void> {
   if (!Number.isFinite(updatedAt)) throw new Error('Fecha inválida');
-  await update(ref(getDB(), `${ROOT}/${choirId}`), {
-    [`playlists/${code}/updatedAt`]: updatedAt,
-    updatedAt: Date.now(),
-  });
+  await guardWrite(`${ROOT}/${choirId}`, 'Coros', () =>
+    update(ref(getDB(), `${ROOT}/${choirId}`), {
+      [`playlists/${code}/updatedAt`]: updatedAt,
+      updatedAt: Date.now(),
+    }),
+  );
 }
 
 /** Quita la playlist del histórico del coro (su contenido sigue en la nube). */
@@ -249,10 +258,12 @@ export async function removeChoirPlaylist(
   choirId: string,
   code: string,
 ): Promise<void> {
-  await update(ref(getDB(), `${ROOT}/${choirId}`), {
-    [`playlists/${code}`]: null,
-    updatedAt: Date.now(),
-  });
+  await guardWrite(`${ROOT}/${choirId}`, 'Coros', () =>
+    update(ref(getDB(), `${ROOT}/${choirId}`), {
+      [`playlists/${code}`]: null,
+      updatedAt: Date.now(),
+    }),
+  );
 }
 
 /** Quita la playlist del coro Y borra su contenido compartido. */
@@ -261,12 +272,16 @@ export async function deleteChoirPlaylistCompletely(
   code: string,
 ): Promise<void> {
   await removeChoirPlaylist(choirId, code);
-  await remove(ref(getDB(), `playlistShares/${code}`));
+  await guardWrite(`playlistShares/${code}`, 'Coros', () =>
+    remove(ref(getDB(), `playlistShares/${code}`)),
+  );
 }
 
 /** Cierra a mano una sesión de coro en vivo. */
 export async function closeChoirSession(key: string): Promise<void> {
-  await remove(ref(getDB(), `choirSessions/${key}`));
+  await guardWrite(`choirSessions/${key}`, 'Coros', () =>
+    remove(ref(getDB(), `choirSessions/${key}`)),
+  );
 }
 
 /* ─── Formato ──────────────────────────────────────────────────────────── */

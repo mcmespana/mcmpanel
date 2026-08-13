@@ -15,6 +15,12 @@ import {
   activityFirebasePath,
   buildGranularActivityWrites,
 } from '@/lib/activityWrites';
+import {
+  guardWrite,
+  isPermissionDenied,
+  recordIfPermissionDenied,
+} from '@/lib/firebaseRules';
+import { FirebaseRulesErrorDialog } from './FirebaseRulesErrorDialog';
 import { cn } from '@/lib/utils';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SECTION_META, pathForSection, sectionForPath, type SectionId } from '@/lib/sections';
@@ -42,6 +48,35 @@ export type JSONData = {
   jubileo?: any;
   activities?: any;
   profileConfig?: ProfileConfigDocument;
+};
+
+/**
+ * Los nodos de primer nivel que gestiona este componente — exactamente las
+ * claves de `JSONData`. Son a los que se suscribe, uno a uno, en vez de a la
+ * raíz. Si añades una clave a `JSONData`, añádela aquí o su sección se quedará
+ * siempre vacía.
+ */
+const MANAGED_NODES = [
+  'albums',
+  'app',
+  'calendars',
+  'songs',
+  'wordle',
+  'jubileo',
+  'activities',
+  'profileConfig',
+] as const satisfies readonly (keyof JSONData)[];
+
+/** Nombre humano de cada nodo, para el modal de error de reglas. */
+const SECTION_LABEL: Record<string, string> = {
+  albums: 'Álbumes',
+  app: 'App',
+  calendars: 'Calendarios',
+  songs: 'Cantoral',
+  wordle: 'Wordle',
+  jubileo: 'Actividades (Jubileo)',
+  activities: 'Actividades',
+  profileConfig: 'Perfiles',
 };
 
 export type ActiveSection = SectionId;
@@ -79,35 +114,68 @@ export function JSONManager() {
     return () => unsub();
   }, []);
 
-  // Real-time subscription to database root
+  // Suscripción en tiempo real, NODO A NODO — nunca a la raíz.
+  //
+  // Antes esto era un `onValue(ref(db, '/'))`. Dos problemas:
+  //
+  //  1. **Seguridad**: conceder `.read` en la raíz es conceder `/users`, o sea
+  //     el diario de Contigo (hábitos, bookmarks, revisiones) de todo el mundo.
+  //     No hay forma de cerrar eso más abajo, porque `.read` cascadea y no se
+  //     puede revocar. Mientras el panel leyera la raíz, las reglas no se
+  //     podían cerrar de ninguna manera.
+  //  2. **Tráfico**: la raíz cambia sin parar (heartbeats de /pushTokens,
+  //     respuestas de encuestas), y cada cambio se traía la base ENTERA —
+  //     tokens y respuestas incluidos— para pintar ocho nodos de contenido.
+  //
+  // El panel solo gestiona las claves de `JSONData`, así que se suscribe a esas
+  // y punto. Las demás secciones (Coros, Encuestas, Usuarios, Notificaciones)
+  // ya tenían sus propias suscripciones.
   useEffect(() => {
     const db = getDB();
-    const rootRef = ref(db, '/');
-    const unsub = onValue(
-      rootRef,
-      (snap) => {
-        const val = snap.val();
-        const remote = (val && typeof val === 'object' ? val : {}) as JSONData;
-        // La raíz cambia constantemente por escrituras de la app (heartbeats de
-        // /pushTokens, respuestas de encuestas…). No dejar que ese refresco
-        // pise las secciones con ediciones locales aún sin guardar.
-        const pending = pendingUpdates.current;
-        setJsonData(
-          Object.keys(pending).length > 0 ? { ...remote, ...pending } : remote,
-        );
-        setLoading(false);
-      },
-      (err) => {
-        console.error('Firebase onValue error', err);
-        setLoading(false);
-        toast({
-          title: 'Error conectando con Firebase',
-          description: 'Revisa las credenciales y las reglas de la Realtime Database',
-          variant: 'destructive',
-        });
-      }
+    const remote: Record<string, unknown> = {};
+    const settled = new Set<string>();
+
+    const publish = (key: string) => {
+      settled.add(key);
+      // El refresco remoto NO debe pisar las secciones con ediciones locales
+      // sin guardar.
+      const pending = pendingUpdates.current;
+      setJsonData(
+        (Object.keys(pending).length > 0
+          ? { ...remote, ...pending }
+          : { ...remote }) as JSONData,
+      );
+      if (settled.size === MANAGED_NODES.length) setLoading(false);
+    };
+
+    const unsubs = MANAGED_NODES.map((key) =>
+      onValue(
+        ref(db, `/${key}`),
+        (snap) => {
+          const value = snap.val();
+          // Un nodo que no existe se quita del objeto en vez de quedarse como
+          // `undefined`: `sectionHasData` distingue "no hay nada" de "hay algo".
+          if (value === null || value === undefined) delete remote[key];
+          else remote[key] = value;
+          publish(key);
+        },
+        (err) => {
+          // Denegado por reglas → al modal, con su path. Cualquier otra cosa
+          // (red, credenciales) sigue siendo un toast.
+          if (!recordIfPermissionDenied(err, 'read', `/${key}`, SECTION_LABEL[key] ?? key)) {
+            console.error(`Firebase onValue error en /${key}`, err);
+            toast({
+              title: `Error leyendo /${key}`,
+              description: 'Revisa las credenciales de Firebase y la conexión',
+              variant: 'destructive',
+            });
+          }
+          // Un nodo denegado no puede dejar el panel cargando para siempre.
+          publish(key);
+        },
+      ),
     );
-    return () => unsub();
+    return () => unsubs.forEach((unsub) => unsub());
   }, [toast]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -194,7 +262,13 @@ export function JSONManager() {
     );
     const wroteActivities = activityPathsSnapshot.size > 0;
     if (Object.keys(granularWrites).length > 0) {
-      await update(ref(db, '/'), granularWrites);
+      // `update()` multi-path: la RTDB evalúa las reglas en CADA ruta del
+      // objeto, no en la raíz, así que esto no necesita permiso sobre `/`.
+      await guardWrite(
+        Object.keys(granularWrites).join(', '),
+        'Actividades',
+        () => update(ref(db, '/'), granularWrites),
+      );
     }
 
     const entries = Object.entries(updatesSnapshot);
@@ -215,21 +289,35 @@ export function JSONManager() {
           const appWrites: Record<string, unknown> = {};
           if (value.feedback !== undefined) appWrites['app/feedback'] = value.feedback;
           if (value.updatedAt !== undefined) appWrites['app/updatedAt'] = value.updatedAt;
-          if (Object.keys(appWrites).length > 0) await update(ref(db, '/'), appWrites);
+          if (Object.keys(appWrites).length > 0) {
+            await guardWrite(Object.keys(appWrites).join(', '), 'App', () =>
+              update(ref(db, '/'), appWrites),
+            );
+          }
         }
         continue;
       }
       if (key === 'wordle') {
         if (value && typeof value === 'object') {
-          if (value['daily-words'] !== undefined) await set(ref(db, '/wordle/daily-words'), value['daily-words']);
-          if (value['updatedAt'] !== undefined) await set(ref(db, '/wordle/updatedAt'), value['updatedAt']);
+          if (value['daily-words'] !== undefined) {
+            await guardWrite('wordle/daily-words', 'Wordle', () =>
+              set(ref(db, '/wordle/daily-words'), value['daily-words']),
+            );
+          }
+          if (value['updatedAt'] !== undefined) {
+            await guardWrite('wordle/updatedAt', 'Wordle', () =>
+              set(ref(db, '/wordle/updatedAt'), value['updatedAt']),
+            );
+          }
         }
         continue;
       }
       // Escribir SIEMPRE el valor del snapshot, no jsonData[key]: jsonData
-      // puede haber sido refrescado por el listener de la raíz entre la
-      // edición y el guardado, y perderíamos el cambio local.
-      await set(ref(db, `/${key}`), value);
+      // puede haber sido refrescado por el listener remoto entre la edición y
+      // el guardado, y perderíamos el cambio local.
+      await guardWrite(key, SECTION_LABEL[key] ?? key, () =>
+        set(ref(db, `/${key}`), value),
+      );
     }
   };
 
@@ -259,9 +347,19 @@ export function JSONManager() {
       setDirty(!allFlushed);
       toast({ title: 'Guardado en Firebase', description: 'Los cambios se han sincronizado.' });
     } catch (e) {
-      console.error(e);
       setSaveStatus('error');
-      toast({ title: 'Error al guardar', description: 'No se pudo guardar en Firebase', variant: 'destructive' });
+      // Si fue por reglas, `guardWrite` ya lo registró y el modal lo cuenta con
+      // el path exacto: aquí solo hace falta no decir "error genérico".
+      if (isPermissionDenied(e)) {
+        toast({
+          title: 'Guardado bloqueado por las reglas de Firebase',
+          description: 'Mira el detalle en la ventana de error.',
+          variant: 'destructive',
+        });
+      } else {
+        console.error(e);
+        toast({ title: 'Error al guardar', description: 'No se pudo guardar en Firebase', variant: 'destructive' });
+      }
     }
   };
 
@@ -395,6 +493,10 @@ export function JSONManager() {
 
   return (
     <SidebarProvider>
+      {/* Único punto de montaje del modal de reglas: escucha el registro
+          compartido de `lib/firebaseRules.ts`, que alimentan todas las
+          secciones. */}
+      <FirebaseRulesErrorDialog />
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar
           activeSection={activeSection}

@@ -56,6 +56,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref } from 'firebase/database';
+import { onRulesError } from '@/lib/firebaseRules';
 import { slugify } from '@/lib/profileCatalog';
 import { SurveyEditor } from './surveys/SurveyEditor';
 import { ResponsesIndividual } from './surveys/ResponsesIndividual';
@@ -107,13 +108,21 @@ export function SurveysSection() {
   useEffect(() => {
     const db = getDB();
     const subs = [
-      onValue(ref(db, 'surveys'), (s) => {
-        setSurveysNode(s.val());
-        setLoading(false);
-      }),
-      onValue(ref(db, 'app/evaluationConfig'), (s) => setAppConfigNode(s.val())),
-      onValue(ref(db, 'app/evaluations'), (s) => setAppResponsesNode(s.val())),
-      onValue(ref(db, 'activities'), (s) => setActivitiesNode(s.val())),
+      onValue(
+        ref(db, 'surveys'),
+        (s) => {
+          setSurveysNode(s.val());
+          setLoading(false);
+        },
+        (err) => {
+          onRulesError('surveys', 'Encuestas')(err);
+          // Denegado o no, la sección no puede quedarse cargando para siempre.
+          setLoading(false);
+        },
+      ),
+      onValue(ref(db, 'app/evaluationConfig'), (s) => setAppConfigNode(s.val()), onRulesError('app/evaluationConfig', 'Encuestas')),
+      onValue(ref(db, 'app/evaluations'), (s) => setAppResponsesNode(s.val()), onRulesError('app/evaluations', 'Encuestas · respuestas')),
+      onValue(ref(db, 'activities'), (s) => setActivitiesNode(s.val()), onRulesError('activities', 'Encuestas · eventos')),
     ];
     return () => subs.forEach((u) => u());
   }, []);

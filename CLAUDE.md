@@ -72,11 +72,15 @@ Reglas de oro al tocar datos:
 
 ## Mecánica de guardado (JSONManager)
 
-- Suscripción en tiempo real a la **raíz** de la RTDB (`onValue('/')`).
+- Suscripción en tiempo real **nodo a nodo** (`MANAGED_NODES`: los 8 de
+  `JSONData`), NO a la raíz. Conceder `.read` en `/` sería conceder `/users`
+  —el diario de Contigo de todo el mundo— y `.read` cascadea sin poder
+  revocarse. De paso, ya no se baja la base entera cada vez que un móvil manda
+  su heartbeat de `/pushTokens`. **Si añades una clave a `JSONData`, añádela a
+  `MANAGED_NODES`** o su sección se quedará siempre vacía.
 - Las ediciones se acumulan en `pendingUpdates` y se escriben con `set()` de
   **nodo completo** cada 10 s (auto-save) o con el botón de guardado.
-- El listener de raíz NO debe pisar secciones con cambios pendientes (los
-  heartbeats de `/pushTokens` refrescan la raíz constantemente).
+- El listener remoto NO debe pisar secciones con cambios pendientes.
 - ⚠️ **Excepciones al `set()` de nodo completo** — nodos que la app también
   escribe y que un `set()` borraría:
   - `/activities` y `/jubileo`: `update()` multi-path solo de las subrutas
@@ -120,13 +124,28 @@ npm run preview    # smoke test del build
 ## Seguridad (estado real)
 
 - El panel escribe con el **SDK cliente de Firebase, sin autenticación**.
-  Funciona porque las reglas de la RTDB en producción están abiertas.
-- ⚠️ `mcm-app/database.rules.json` (repo mcmapp) asume que el panel usa Admin
-  SDK. **Desplegar esas reglas rompería este panel** (lectura de raíz y todas
-  las escrituras). Antes de endurecer reglas hay que dar auth real al panel
-  (Firebase Auth + allowlist, o mover escrituras a las funciones de `api/` con
-  credencial de servidor).
-- `/api/notifications/send` y `/api/notifications/schedule` no exigen
+- `mcm-app/database.rules.json` (repo mcmapp) ya está **preparado para
+  desplegarse sin romper el panel**: los permisos que este panel necesita
+  cuelgan de dos banderas en `/_config` (`legacyPanelWrites`,
+  `legacyNotificationsOpen`). ⚠️ **Hay que sembrar `/_config` en la base de
+  datos ANTES de desplegar las reglas** (`mcm-app/firebase-seed/config.json`);
+  si no existe, las banderas valen `null` y el panel se queda sin permisos de
+  golpe. Guía: `mcmapp/docs/desarrollo/FIREBASE_REGLAS.md`.
+- **Dos secciones dejan de funcionar al desplegar, a propósito**: *Usuarios*
+  (leer `/users` es leer `users/<uid>/contigo/**`, el diario de cada persona) y
+  el contador de destinatarios del composer (listar `/pushTokens` es poder
+  mandar push a todos). No tienen bandera; se arreglan con auth real en el panel
+  (decisión D2, recomendación: Firebase Auth + `users/<uid>/isAdmin`, que ya
+  existe).
+- **Diagnóstico**: `src/lib/firebaseRules.ts` recoge todo `PERMISSION_DENIED` y
+  `FirebaseRulesErrorDialog` lo enseña con el path, la operación y qué mirar.
+  Al añadir una suscripción o escritura nueva, pásala por `onRulesError(path,
+  seccion)` o `guardWrite(path, seccion, fn)` — si no, el fallo se pierde en la
+  consola y la sección se ve vacía sin explicación.
+- `api/_lib/push.ts` manda `?auth=$FIREBASE_DB_SECRET` si la variable existe en
+  Vercel (retrocompatible: sin ella se comporta como siempre). Ponerla es lo que
+  permite apagar `legacyNotificationsOpen`.
+- `/api/notifications/send` y `/api/notifications/schedule` siguen sin exigir
   autenticación: cualquiera que conozca la URL puede enviar push a todos los
   usuarios. Pendiente de proteger.
 

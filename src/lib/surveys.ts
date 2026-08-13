@@ -1,4 +1,5 @@
 import { ref, set, update } from 'firebase/database';
+import { guardWrite } from '@/lib/firebaseRules';
 import { getDB } from '@/lib/firebase';
 import { slugify } from '@/lib/profileCatalog';
 
@@ -341,10 +342,12 @@ export function parseEventEvaluations(activitiesNode: unknown): SurveyEntry[] {
 /** Escribe `data` + toca `updatedAt`, sin tocar `respuestas` ni `hidden`. */
 export async function writeSurveyConfig(configPath: string, config: SurveyConfig): Promise<void> {
   const db = getDB();
-  await update(ref(db, configPath), {
-    data: pruneUndefined(config),
-    updatedAt: Date.now(),
-  });
+  await guardWrite(configPath, 'Encuestas', () =>
+    update(ref(db, configPath), {
+      data: pruneUndefined(config),
+      updatedAt: Date.now(),
+    }),
+  );
 }
 
 /** Toggle del estado abierto/cerrado de una encuesta (solo cambia status). */
@@ -355,13 +358,17 @@ export async function setSurveyStatus(configPath: string, config: SurveyConfig, 
 /** Oculta/muestra la tarjeta de evaluación en el hub del evento. */
 export async function setEventEvaluationHidden(configPath: string, hidden: boolean): Promise<void> {
   const db = getDB();
-  await update(ref(db, configPath), { hidden, updatedAt: Date.now() });
+  await guardWrite(configPath, 'Encuestas', () =>
+    update(ref(db, configPath), { hidden, updatedAt: Date.now() }),
+  );
 }
 
 /** Borra una encuesta genérica completa (incluye respuestas). */
 export async function deleteGenericSurvey(id: string): Promise<void> {
   const db = getDB();
-  await set(ref(db, `surveys/${id}`), null);
+  await guardWrite(`surveys/${id}`, 'Encuestas', () =>
+    set(ref(db, `surveys/${id}`), null),
+  );
 }
 
 // ─── Índice de banners (surveys/_index) ─────────────────────────────────────────
@@ -401,10 +408,12 @@ export function buildIndex(generics: { id: string; config: SurveyConfig }[]): Su
 /** Escribe el índice ligero `surveys/_index/data` + toca su `updatedAt`. */
 export async function writeIndex(entries: SurveyIndexEntry[]): Promise<void> {
   const db = getDB();
-  await update(ref(db, 'surveys/_index'), {
-    data: pruneUndefined(entries),
-    updatedAt: Date.now(),
-  });
+  await guardWrite('surveys/_index', 'Encuestas · índice', () =>
+    update(ref(db, 'surveys/_index'), {
+      data: pruneUndefined(entries),
+      updatedAt: Date.now(),
+    }),
+  );
 }
 
 // ─── Dedup y segmentación ────────────────────────────────────────────────────

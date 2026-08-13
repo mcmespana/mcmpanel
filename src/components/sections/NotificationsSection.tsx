@@ -27,6 +27,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref } from 'firebase/database';
+import { onRulesError } from '@/lib/firebaseRules';
 import {
   sendNotification,
   scheduleNotification,
@@ -387,7 +388,7 @@ export function NotificationsSection() {
       } else {
         setHistory([]);
       }
-    });
+    }, onRulesError('/notifications', 'Notificaciones'));
     return () => unsub();
   }, []);
 
@@ -404,7 +405,7 @@ export function NotificationsSection() {
       } else {
         setScheduled([]);
       }
-    });
+    }, onRulesError('/scheduledNotifications', 'Notificaciones · programadas'));
     return () => unsub();
   }, []);
 
@@ -419,7 +420,7 @@ export function NotificationsSection() {
       } else {
         setTokens([]);
       }
-    });
+    }, onRulesError('/pushTokens', 'Notificaciones · destinatarios'));
     return () => unsub();
   }, []);
 
@@ -452,7 +453,7 @@ export function NotificationsSection() {
         events.push({ id: 'jubileo', title: null });
       }
       setActivityEvents(events);
-    });
+    }, onRulesError('/activities', 'Notificaciones · eventos'));
     return () => unsub();
   }, []);
 
@@ -463,7 +464,7 @@ export function NotificationsSection() {
     const unsub = onValue(delRef, (snap) => {
       const val = snap.val();
       setDelegations(Array.isArray(val) ? (val as DelegationListItem[]) : []);
-    });
+    }, onRulesError('/profileConfig/data/delegationList', 'Notificaciones · delegaciones'));
     return () => unsub();
   }, []);
 

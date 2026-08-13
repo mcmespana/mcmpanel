@@ -29,6 +29,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref } from 'firebase/database';
+import { onRulesError } from '@/lib/firebaseRules';
 import { cn } from '@/lib/utils';
 import {
   closeChoirSession,
@@ -99,7 +100,7 @@ export function ChoirsSection() {
         setError(false);
       },
       (err) => {
-        console.error('Firebase choirs onValue error', err);
+        onRulesError('choirs', 'Coros')(err);
         setLoading(false);
         setError(true);
       },
@@ -139,7 +140,7 @@ export function ChoirsSection() {
             return next;
           });
         },
-        (err) => console.error('Firebase choirSessions onValue error', err),
+        onRulesError(`choirSessions/${id}`, 'Coros'),
       ),
     );
     return () => unsubs.forEach((u) => u());

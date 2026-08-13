@@ -1,5 +1,6 @@
 import { getDB } from '@/lib/firebase';
 import { ref, set } from 'firebase/database';
+import { guardWrite } from '@/lib/firebaseRules';
 
 /**
  * Helpers to read and normalise the `users` node of the Realtime Database.
@@ -163,10 +164,18 @@ export function parseUsers(usersNode: unknown): PanelUser[] {
   );
 }
 
-/** Write the admin flag for a single user. Returns a promise that resolves on success. */
+/**
+ * Write the admin flag for a single user.
+ *
+ * ⚠️ Con las reglas cerradas esto NO funciona desde el panel: `users/$uid` solo
+ * lo escribe su dueño (y `isAdmin` ni siquiera él — hace falta ser ya admin,
+ * ver el `.validate` en `mcm-app/database.rules.json`). Necesita auth real en
+ * el panel; mientras tanto la denegación sale en el modal de reglas.
+ */
 export function setUserAdmin(uid: string, isAdmin: boolean): Promise<void> {
   const db = getDB();
-  return set(ref(db, `users/${uid}/isAdmin`), isAdmin);
+  const path = `users/${uid}/isAdmin`;
+  return guardWrite(path, 'Usuarios', () => set(ref(db, path), isAdmin));
 }
 
 export const PROVIDER_META: Record<AuthProvider, { label: string; className: string }> = {

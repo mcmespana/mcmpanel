@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { getDB } from '@/lib/firebase';
 import { onValue, ref } from 'firebase/database';
+import { recordIfPermissionDenied } from '@/lib/firebaseRules';
 import {
   parseUsers,
   setUserAdmin,
@@ -58,7 +59,10 @@ export function UsersSection() {
         setError(false);
       },
       (err) => {
-        console.error('Firebase users onValue error', err);
+        // `/users` no tiene interruptor en las reglas y no lo va a tener: ahí
+        // está el diario de Contigo de cada persona. Esta sección no funciona
+        // hasta que el panel tenga auth real. El modal lo explica.
+        recordIfPermissionDenied(err, 'read', 'users', 'Usuarios');
         setLoading(false);
         setError(true);
       },
