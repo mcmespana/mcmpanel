@@ -2,6 +2,10 @@ import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
+	// El panel es OSCURO Y SOLO OSCURO: `src/index.css` define los tokens
+	// únicamente en `:root` y no hay bloque `.dark`. Se deja declarado aquí
+	// porque shadcn asume claro por defecto y sus componentes de la doc vienen
+	// pensados para invertirse. Ver `design.md` §2.
 	darkMode: ["class"],
 	content: [
 		"./pages/**/*.{ts,tsx}",

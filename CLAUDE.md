@@ -125,7 +125,8 @@ npm run preview    # smoke test del build
 | Envío push (compartido) | `api/_lib/push.ts` |
 | Endpoints push | `api/notifications/{send,schedule,process-scheduled}.ts` |
 | Segmentación de audiencia | `src/lib/audience.ts` (espejo en `api/_lib/push.ts`) |
-| Catálogo de perfiles | `src/lib/profileCatalog.ts` |
+| Catálogo de perfiles | `src/lib/profileCatalog.ts` (espejo de la app) |
+| Colores de marca MCM | `src/lib/brandTokens.ts` (espejo de `mcm-app/constants/colors.ts`) — lo que representa datos de la app se pinta con esto, no con la paleta del panel |
 | Seed de profileConfig | `src/lib/profileConfigSeed.ts` |
 | Modo revisión de stores | `src/lib/appReviewMode.ts` |
 | Encuestas | `src/lib/surveys.ts` |

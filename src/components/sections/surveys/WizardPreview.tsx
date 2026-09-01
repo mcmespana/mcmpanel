@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Star, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SurveyConfig, SurveyQuestion } from '@/lib/surveys';
+import { DEFAULT_SURVEY_ACCENT } from '@/lib/brandTokens';
 
 /**
  * Réplica ligera del wizard de la MCM App: una pregunta por pantalla con barra
@@ -10,7 +11,7 @@ import type { SurveyConfig, SurveyQuestion } from '@/lib/surveys';
  */
 export function WizardPreview({ config }: { config: SurveyConfig }) {
   const questions = useMemo(() => config.questions ?? [], [config.questions]);
-  const accent = config.accentColor || '#31AADF';
+  const accent = config.accentColor || DEFAULT_SURVEY_ACCENT;
   // -1 = pantalla de bienvenida, questions.length = agradecimiento.
   const [step, setStep] = useState(-1);
   const [values, setValues] = useState<Record<string, unknown>>({});

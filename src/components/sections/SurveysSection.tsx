@@ -83,6 +83,7 @@ import {
   type SurveyEntry,
   type SurveyStatus,
 } from '@/lib/surveys';
+import { DEFAULT_SURVEY_ACCENT } from '@/lib/brandTokens';
 
 const ALL = '__all';
 
@@ -252,7 +253,7 @@ export function SurveysSection() {
             surveyClass: 'generic',
             id: '',
             label: 'Nueva encuesta',
-            config: { status: 'draft', accentColor: '#31AADF', emoji: '📋', questions: [] },
+            config: { status: 'draft', accentColor: DEFAULT_SURVEY_ACCENT, emoji: '📋', questions: [] },
             responses: [],
             configPath: 'surveys/',
           }

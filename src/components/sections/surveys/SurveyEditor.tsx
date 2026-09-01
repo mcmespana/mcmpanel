@@ -51,6 +51,7 @@ import {
   type SurveyEntry,
   type SurveyStatus,
 } from '@/lib/surveys';
+import { DEFAULT_SURVEY_ACCENT } from '@/lib/brandTokens';
 
 interface SurveyEditorProps {
   entry: SurveyEntry;
@@ -395,7 +396,7 @@ function ContentStep({
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={config.accentColor || '#31AADF'}
+                value={config.accentColor || DEFAULT_SURVEY_ACCENT}
                 onChange={(e) => patch({ accentColor: e.target.value })}
                 className="h-9 w-12 cursor-pointer rounded border border-border/50 bg-input"
               />

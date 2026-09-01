@@ -54,9 +54,10 @@ la pantalla, **uno como mucho**. `gradient-primary` en cabeceras de sección.
    previsualización de notificación o de encuesta: se pintan con los tokens
    reales de MCM, no con el cian del panel. El admin tiene que ver lo que la
    persona verá en el móvil.
-   El espejo de tokens es `src/lib/brandTokens.ts` — misma convención que
-   `src/lib/profileCatalog.ts`, que ya es espejo del catálogo de la app.
-   *(Pendiente de crear: `mcmapp/docs/planes/PLAN_DISENO.md` §G1.)*
+   El espejo de tokens es [`src/lib/brandTokens.ts`](src/lib/brandTokens.ts) —
+   misma convención que `src/lib/profileCatalog.ts`, que ya es espejo del
+   catálogo de la app. Ya lo usan el selector de color de calendarios y el
+   acento por defecto de las encuestas.
 2. **El vocabulario es el mismo** que en la app y en los contratos: perfil,
    delegación, evento, arreglo, playlist, encuesta. Nada de sinónimos "de
    admin".
