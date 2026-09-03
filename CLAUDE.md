@@ -6,6 +6,16 @@
 
 ---
 
+## Diseño
+
+**Antes de tocar interfaz, lee [`design.md`](design.md).** Dice en qué el panel
+es distinto a la app **a propósito** (oscuro tipo consola, denso, tabla antes
+que tarjeta) y en qué tiene que ir de la manita con ella: pintar con los
+colores reales de MCM lo que representa datos de la app, espejar catálogos en
+vez de reinventarlos, vocabulario común, y la forma de los datos por encima de
+la estética. La guía de la app —que manda en todo lo compartido— es
+`design.md` del repo `mcmapp`.
+
 ## Qué es
 
 SPA de **React 18 + TypeScript + Vite + shadcn-ui/Tailwind**, desplegada en
@@ -115,7 +125,8 @@ npm run preview    # smoke test del build
 | Envío push (compartido) | `api/_lib/push.ts` |
 | Endpoints push | `api/notifications/{send,schedule,process-scheduled}.ts` |
 | Segmentación de audiencia | `src/lib/audience.ts` (espejo en `api/_lib/push.ts`) |
-| Catálogo de perfiles | `src/lib/profileCatalog.ts` |
+| Catálogo de perfiles | `src/lib/profileCatalog.ts` (espejo de la app) |
+| Colores de marca MCM | `src/lib/brandTokens.ts` (espejo de `mcm-app/constants/colors.ts`) — lo que representa datos de la app se pinta con esto, no con la paleta del panel |
 | Seed de profileConfig | `src/lib/profileConfigSeed.ts` |
 | Modo revisión de stores | `src/lib/appReviewMode.ts` |
 | Encuestas | `src/lib/surveys.ts` |

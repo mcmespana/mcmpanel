@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { calendarColorOptions } from '@/lib/brandTokens';
 
 interface CalendarConfig {
   id: string;
@@ -21,12 +22,10 @@ interface CalendarsSectionProps {
   onUpdate: (data: any) => void;
 }
 
-const pastelColors = [
-  '#FFB3B3', '#FFD1B3', '#FFFFB3', '#D1FFB3', '#B3FFB3',
-  '#B3FFD1', '#B3FFFF', '#B3D1FF', '#B3B3FF', '#D1B3FF',
-  '#FFB3FF', '#FFB3D1', '#31AADF', '#A3BD31', '#CC0628',
-  '#F97316', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B'
-];
+// Los colores que se ofrecen para un calendario son los que la APP pinta, así
+// que salen del espejo de tokens de marca, no de una paleta del panel.
+// Ver `src/lib/brandTokens.ts` y `design.md` §3.
+const pastelColors = calendarColorOptions.map((c) => c.hex);
 
 export function CalendarsSection({ data, onUpdate }: CalendarsSectionProps) {
   const [calendars, setCalendars] = useState<CalendarConfig[]>(data?.data || []);

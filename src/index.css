@@ -3,6 +3,18 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * ⚠️ El panel es OSCURO Y SOLO OSCURO. Estos tokens viven en `:root` y NO
+   * hay bloque `.dark`: no es un descuido, es la decisión (`design.md` §2).
+   * Si copias un componente de la documentación de shadcn, viene asumiendo
+   * tema claro — compruébalo antes de darlo por bueno, y NO añadas un tema
+   * claro sin pedírselo al usuario.
+   *
+   * Lo que representa datos de la APP (colores de calendario, acento de
+   * evento o encuesta, perfiles, previsualizaciones) NO se pinta con esta
+   * paleta: sale de `src/lib/brandTokens.ts`, que es espejo de
+   * `mcm-app/constants/colors.ts`.
+   */
   :root {
     /* Dark tech base */
     --background: 220 13% 8%;
