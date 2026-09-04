@@ -48,6 +48,7 @@ import {
   summarizeAudience,
 } from '@/lib/audience';
 import type { ProfileType, DelegationListItem } from '@/types/profileConfig';
+import { brand } from '@/lib/brandTokens';
 
 // Default tap behaviour: send NO internalRoute so the app opens THIS notification
 // expanded ("en grande") inside the notification center, matching data.id against
@@ -1492,7 +1493,13 @@ export function NotificationsSection() {
                   <div className="bg-gray-900 rounded-2xl p-4">
                     <div className="bg-gray-800 rounded-lg p-3 space-y-2">
                       <div className="flex items-start space-x-3">
-                        <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                        {/* Azul MCM, no el cian del panel: esto es una
+                            previsualización de lo que verá la persona en el
+                            móvil. Ver `design.md` §3. */}
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: brand.primary }}
+                        >
                           {form.icon ? (
                             <img
                               src={form.icon}
@@ -1503,7 +1510,7 @@ export function NotificationsSection() {
                               }}
                             />
                           ) : (
-                            <Bell className="w-4 h-4 text-primary-foreground" />
+                            <Bell className="w-4 h-4 text-white" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -1536,7 +1543,11 @@ export function NotificationsSection() {
                                 .map((b, i) => (
                                   <span
                                     key={i}
-                                    className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded"
+                                    className="text-[10px] px-2 py-0.5 rounded"
+                                    style={{
+                                      backgroundColor: `${brand.secondary}33`,
+                                      color: brand.secondary,
+                                    }}
                                   >
                                     {b.text.trim() || 'Ver'}
                                   </span>
