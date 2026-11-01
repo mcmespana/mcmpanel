@@ -46,7 +46,7 @@ server-side; los endpoints `api/notifications/*` solo protegen el cron con
 | Cantoral | `/cantoral` | `/songs` | `{ data: {cat: {categoryTitle, songs[]}}, updatedAt, ediciones, solicitudes, fallitos }`. La **fuente de verdad** es el repo `mcmapp-cantoral` (regenera y hace PUT de `songs/data`); las colas `ediciones/solicitudes/fallitos` las escribe la app. **La edición de canciones está deprecada**: hay un aviso a pantalla completa antes de entrar, porque el siguiente push del repo se lleva por delante lo que se toque aquí |
 | Wordle | `/wordle` | `/wordle` | Dormido en la app |
 | Actividades | `/actividades` | `/activities` (+ legacy `/jubileo`) | Eventos y sus subsecciones. `activities/_meta = { updatedAt, data: { activeEventId } }` marca el evento activo global |
-| Notificaciones | `/notificaciones` | `/notifications`, `/scheduledNotifications`, `/pushTokens` | Composer con audiencia de 4 ejes (todos/perfil/delegación/evento) + programadas |
+| Notificaciones | `/notificaciones` | `/notifications`, `/scheduledNotifications`, `/pushTokens` | Composer con audiencia de 4 ejes (todos/perfil/delegación/evento) + programadas + pestaña **Silenciosas** (escribe en `/notifications` sin push; edita/desactiva/borra registros, vía `api/notifications/silent.ts`) |
 | Encuestas | `/encuestas` | `/surveys` | Encuestas/evaluaciones (contrato en mcmapp) |
 | Coros | `/coros` | `/choirs`, `/choirSessions/<choirId>`, `/playlistShares` | Coros de los que cuelgan las playlists compartidas. Los crea la gente desde la app (sin login): aquí se borran, se renombran y se **retoca la fecha** de cada playlist, que es lo que ordena el histórico y decide cuál es «la última». Escribe con `update()`/`remove()` granular, NO por el guardado de nodo completo |
 | Usuarios | `/usuarios` | `/users` | Solo escribe `users/{uid}/isAdmin` |
@@ -100,7 +100,7 @@ Reglas de oro al tocar datos:
     tocan. Antes se borraban en cada guardado de la sección App.
   - `/wordle`: solo `daily-words` y `updatedAt`.
   - Coros, Encuestas y Usuarios no pasan por aquí: escriben granular por su
-    cuenta.
+    cuenta. Las notificaciones silenciosas tampoco: van por `api/notifications/silent.ts`.
   Si añades una sección cuyo nodo comparta árbol con escrituras de la app,
   añádela a esta lista en `writePending()`.
 

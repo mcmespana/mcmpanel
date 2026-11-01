@@ -110,6 +110,8 @@ export interface NotificationRecord {
   sentCount: number;
   failedCount: number;
   invalidTokens: number;
+  // Oculta de la campana sin borrar (la app debe filtrarlo). Ver silent.ts.
+  disabled?: boolean | null;
 }
 
 // ─── Send notification (delegates to Vercel serverless function) ─────────────
@@ -226,4 +228,54 @@ export async function getStats(db: Database): Promise<NotificationStats> {
     devices: { total: totalDevices, active24h, active7d, platforms },
     notifications: { total: totalNotifications, sent: totalSent },
   };
+}
+
+// ─── Silent notifications (sin push) ─────────────────────────────────────────
+// Escriben/editan/borran registros de /notifications por servidor (ver
+// api/notifications/silent.ts). Valen para cualquier registro del historial.
+
+async function silentRequest<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}/silent${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error((err as { error: string }).error || `Server error: ${res.status}`);
+  }
+  return res.json();
+}
+
+export interface SilentNotificationInput {
+  title: string;
+  body: string;
+  bodyLong?: string;
+  category: string;
+  internalRoute?: string;
+  createdAt?: string; // ISO
+}
+
+export function createSilentNotification(data: SilentNotificationInput) {
+  return silentRequest<{ notificationId: string; status: string; createdAt: string }>('POST', '', data);
+}
+
+// `null` en bodyLong/internalRoute borra el campo.
+export function updateNotification(
+  id: string,
+  changes: Partial<Omit<SilentNotificationInput, 'bodyLong' | 'internalRoute'>> & {
+    bodyLong?: string | null;
+    internalRoute?: string | null;
+    disabled?: boolean;
+  },
+) {
+  return silentRequest<{ notificationId: string; updated: string[] }>(
+    'PATCH', `?id=${encodeURIComponent(id)}`, changes,
+  );
+}
+
+export function deleteNotification(id: string) {
+  return silentRequest<{ notificationId: string; deleted: boolean }>(
+    'DELETE', `?id=${encodeURIComponent(id)}`,
+  );
 }
