@@ -103,3 +103,25 @@ El filtro usado se guarda en `/notifications/<id>.audience` (y en
 La lógica está duplicada a propósito en `src/lib/audience.ts` (preview de
 recuento en el composer) y `api/_lib/push.ts` (filtrado real). **Si cambias una,
 cambia la otra.**
+
+
+## Notificaciones silenciosas (sin push) · `api/notifications/silent.ts`
+
+Pestaña **Silenciosas** del panel: escribe en `/notifications` el mismo registro
+que un envío normal, pero **sin llamar a Expo**. La campana de la app lee todo
+`/notifications` en tiempo real y no filtra por `status`, así que aparece sola.
+
+- `POST` crea un registro con `status: "silent"`, `totalTokens/sentCount: 0`,
+  `topics: []`, `sentAt: null`. `createdAt` (editable) es lo que ordena la campana.
+- `PATCH ?id=` edita `title`, `body`, `bodyLong`, `category`, `internalRoute`,
+  `createdAt` y `disabled`. No toca audiencia, botones ni contadores.
+- `DELETE ?id=` borra el registro; vale para **cualquier** registro, también los
+  enviados por push.
+- Va por servidor (no por el SDK del navegador) porque las reglas solo dejan
+  escribir `/notifications` bajo `legacyNotificationsOpen`, que se apaga al
+  poner `FIREBASE_DB_SECRET`.
+- ⚠️ **`disabled: true` requiere cambio en la app**: hay que descartar esos
+  registros en `normalizeNotificationRecord`/`subscribeToNotifications`
+  (`mcm-app/services/pushNotificationService.ts`) y en el contador del badge
+  (`NotificationsContext`). Hasta entonces el flag solo se refleja en el panel.
+- Sin `audience` el registro es visible para todos (§7.ter del contrato de la app).

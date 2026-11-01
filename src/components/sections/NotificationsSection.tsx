@@ -4,7 +4,7 @@ import {
   CheckCircle, Trash2, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw, Megaphone,
   CalendarClock, XCircle, Ban, Plus, X, MousePointerClick,
-  ChevronDown, Settings2,
+  ChevronDown, Settings2, BellOff,
 } from 'lucide-react';
 import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 import { Button } from '@/components/ui/button';
@@ -49,31 +49,15 @@ import {
 } from '@/lib/audience';
 import type { ProfileType, DelegationListItem } from '@/types/profileConfig';
 import { brand } from '@/lib/brandTokens';
+import {
+  CATEGORIES, DETAIL, MAX_BODY, MAX_BODY_LONG, MAX_TITLE, ROUTE_GROUPS,
+} from '@/lib/notificationOptions';
+import { SilentNotificationsTab } from '@/components/sections/notifications/SilentNotificationsTab';
 
-// Default tap behaviour: send NO internalRoute so the app opens THIS notification
-// expanded ("en grande") inside the notification center, matching data.id against
-// its /notifications/<id> entry in Firebase.
-const DETAIL = '__detail';
 const CUSTOM_ROUTE = '__custom';
 // Deep link a un evento del registry de la app: el payload lleva `data.eventId`
 // y la app abre el hub del evento (ver notificationEventRoute.ts en mcmapp).
 const EVENT_ROUTE = '__event';
-
-// Vocabulario alineado con la MCM App (types/notifications.ts). Cada categoría
-// es también, desde la build de agosto de 2026, un canal de Android separado
-// (mismo id salvo "general" → "default"): el usuario puede silenciar el
-// cantoral sin silenciar los avisos urgentes. Mirror de resolveChannelId() en
-// api/_lib/push.ts — solo para mostrarlo en la vista previa, el envío real lo
-// calcula el backend.
-const CATEGORIES = [
-  { id: 'general', label: 'General' },
-  { id: 'eventos', label: 'Eventos' },
-  { id: 'cancionero', label: 'Cancionero' },
-  { id: 'fotos', label: 'Fotos' },
-  { id: 'celebraciones', label: 'Celebraciones' },
-  { id: 'urgente', label: 'Urgente' },
-  { id: 'mantenimiento', label: 'Mantenimiento' },
-];
 
 function channelIdFor(category: string): string {
   return category === 'general' ? 'default' : category;
@@ -83,40 +67,6 @@ const PRIORITIES = [
   { id: 'default', label: 'Por defecto' },
   { id: 'normal', label: 'Normal' },
   { id: 'high', label: 'Alta' },
-];
-
-// Rutas REALES de la MCM App (Expo Router) agrupadas para el desplegable.
-// Las del grupo "según perfil" (⚠️) dependen del perfil del usuario: si su
-// perfil no tiene esa tab, la navegación puede no ir a ningún sitio. Para
-// envíos universales usa Inicio, Calendario, Fotos o Más.
-//
-// El desplegable se compone en este orden, de más cómodo a más avanzado:
-//   1. DETAIL  → abrir la notificación en grande (recomendado, sin ruta)
-//   2. Secciones para todos
-//   3. Secciones según perfil
-//   4. Ruta personalizada (deep link)
-const ROUTE_GROUPS: { label: string; routes: { id: string; label: string }[] }[] = [
-  {
-    label: 'Secciones para todos',
-    routes: [
-      { id: '/(tabs)/index', label: 'Inicio' },
-      { id: '/(tabs)/calendario', label: 'Calendario' },
-      { id: '/(tabs)/fotos', label: 'Fotos / Álbumes' },
-      { id: '/(tabs)/mas', label: 'Más (Jubileo, Visita del Papa…)' },
-    ],
-  },
-  {
-    label: 'Según perfil del usuario ⚠️',
-    routes: [
-      { id: '/(tabs)/cancionero', label: 'Cancionero' },
-      { id: '/(tabs)/contigo', label: 'Contigo' },
-      { id: '/(tabs)/contigo/evangelio', label: 'Contigo · Evangelio del día' },
-      { id: '/(tabs)/contigo/oracion', label: 'Contigo · Oración' },
-      { id: '/(tabs)/contigo/revision', label: 'Contigo · Revisión' },
-      { id: '/(tabs)/contigo/bookmarks', label: 'Contigo · Favoritos' },
-      { id: '/(tabs)/visitapapa', label: 'Visita del Papa (si está activa)' },
-    ],
-  },
 ];
 
 // ─── Segmentación de destinatarios ─────────────────────────────────────────--
@@ -153,9 +103,6 @@ function eventLabelFor(id: string): string {
   return EVENT_LABELS[id] ?? id;
 }
 
-const MAX_TITLE = 50;
-const MAX_BODY = 200;
-const MAX_BODY_LONG = 2000;
 // Mirrors MAX_ACTION_BUTTONS in the app (utils/notificationRoutes.ts).
 const MAX_ACTION_BUTTONS = 3;
 // The chip in the notification card truncates around here; keep it short.
@@ -362,7 +309,7 @@ export function NotificationsSection() {
   // Active tab is mirrored in the URL (?tab=compose) so the home dashboard can
   // deep-link straight to composing, scheduled or history.
   const [searchParams, setSearchParams] = useSearchParams();
-  const TABS = ['dashboard', 'compose', 'scheduled', 'history'] as const;
+  const TABS = ['dashboard', 'compose', 'scheduled', 'silent', 'history'] as const;
   const tabParam = searchParams.get('tab');
   const activeTab = (TABS as readonly string[]).includes(tabParam ?? '') ? tabParam! : 'compose';
   const handleTabChange = (value: string) => {
@@ -738,7 +685,7 @@ export function NotificationsSection() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
           <TabsTrigger value="dashboard" className="h-9 whitespace-normal text-xs sm:text-sm">
             Dashboard
           </TabsTrigger>
@@ -753,6 +700,9 @@ export function NotificationsSection() {
                 {pendingCount}
               </span>
             )}
+          </TabsTrigger>
+          <TabsTrigger value="silent" className="h-9 whitespace-normal text-xs sm:text-sm">
+            Silenciosas
           </TabsTrigger>
           <TabsTrigger value="history" className="h-9 whitespace-normal text-xs sm:text-sm">
             Historial
@@ -1729,6 +1679,11 @@ export function NotificationsSection() {
           </Card>
         </TabsContent>
 
+        {/* ─── Silent Tab ──────────────────────────────────────────────── */}
+        <TabsContent value="silent">
+          <SilentNotificationsTab history={history} />
+        </TabsContent>
+
         {/* ─── History Tab ─────────────────────────────────────────────── */}
         <TabsContent value="history" className="space-y-4">
           <Card className="bg-card/50 backdrop-blur-sm border-border/50">
@@ -1778,9 +1733,11 @@ export function NotificationsSection() {
                               })}
                             </span>
                           )}
-                          <span>
-                            {notif.sentCount}/{notif.totalTokens} enviados
-                          </span>
+                          {notif.status !== 'silent' && (
+                            <span>
+                              {notif.sentCount}/{notif.totalTokens} enviados
+                            </span>
+                          )}
                           {notif.invalidTokens > 0 && (
                             <span className="text-yellow-500">
                               {notif.invalidTokens} tokens limpiados
@@ -1796,6 +1753,11 @@ export function NotificationsSection() {
                           <>
                             <CheckCircle className="w-3 h-3 mr-1" />
                             Enviado
+                          </>
+                        ) : notif.status === 'silent' ? (
+                          <>
+                            <BellOff className="w-3 h-3 mr-1" />
+                            Silenciosa
                           </>
                         ) : notif.status === 'sending' ? (
                           <>
