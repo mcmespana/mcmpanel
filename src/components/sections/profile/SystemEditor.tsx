@@ -32,6 +32,7 @@ const DEFAULT_GLOBAL: GlobalConfig = {
   maintenanceMessage: '',
   minAppVersion: '0.0.0',
   appReviewMode: false,
+  fotosEnIpad: true,
 };
 
 export function SystemEditor({ data, onChange }: SystemEditorProps) {
@@ -51,6 +52,20 @@ export function SystemEditor({ data, onChange }: SystemEditorProps) {
       onChange(disableAppReviewMode(data));
     }
   };
+
+  const setSkips = (v: string) => {
+    if (v === 'unlimited') {
+      // Firebase rechaza `undefined`: la clave se quita, no se pone a undefined.
+      const { minAppVersionSkips: _omit, ...rest } = global;
+      onChange({ ...data, global: rest });
+    } else {
+      update({ minAppVersionSkips: Number(v) });
+    }
+  };
+  const skipsValue =
+    global.minAppVersionSkips === undefined
+      ? 'unlimited'
+      : String(global.minAppVersionSkips);
 
   const semverValid = SEMVER_REGEX.test(global.minAppVersion);
   const appReviewOn = !!global.appReviewMode;
@@ -97,6 +112,23 @@ export function SystemEditor({ data, onChange }: SystemEditorProps) {
           checked={global.showChangeNameButton}
           onChange={(v) => update({ showChangeNameButton: v })}
         />
+      </Card>
+
+      <Card className="p-4 sm:p-5 bg-card/50 border-border/50 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <h3 className="text-base font-semibold">Fotos en iPad</h3>
+            <p className="text-xs text-muted-foreground">
+              Apagado: la app oculta las Fotos en <strong>todos los iPads</strong> (pestaña, botón de
+              Home y «Más»). Pensado para iPads con MDM de colegios: la app no puede saber si un iPad
+              lo tiene, así que se apaga en todos. iPhone, Android y web no cambian.
+            </p>
+          </div>
+          <Switch
+            checked={global.fotosEnIpad !== false}
+            onCheckedChange={(v) => update({ fotosEnIpad: v })}
+          />
+        </div>
       </Card>
 
       <Card className={`p-4 sm:p-5 space-y-3 border ${appReviewOn ? 'border-warning/50 bg-warning/5' : 'bg-card/50 border-border/50'}`}>
@@ -181,6 +213,23 @@ export function SystemEditor({ data, onChange }: SystemEditorProps) {
               ⚠ No es un semver válido. Formato: <code>1.0.5</code> o <code>1.0.5-beta</code>.
             </p>
           )}
+        </div>
+        <div>
+          <Label htmlFor="minSkips">Si la app queda por debajo</Label>
+          <Select value={skipsValue} onValueChange={setSkips}>
+            <SelectTrigger id="minSkips"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unlimited">Dejar pasar siempre («Ahora no» en cada sesión)</SelectItem>
+              <SelectItem value="0">Estricto: no se entra sin actualizar</SelectItem>
+              <SelectItem value="1">Dejar pasar 1 vez y luego estricto</SelectItem>
+              <SelectItem value="2">Dejar pasar 2 veces y luego estricto</SelectItem>
+              <SelectItem value="3">Dejar pasar 3 veces y luego estricto</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            El contador es por dispositivo y se reinicia si cambias la versión mínima. Sin efecto
+            mientras minAppVersion sea <code>0.0.0</code>.
+          </p>
         </div>
       </Card>
     </div>

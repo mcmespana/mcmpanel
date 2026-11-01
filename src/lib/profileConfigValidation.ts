@@ -84,6 +84,13 @@ export function validateProfileConfig(
     );
   }
 
+  const skips = draft.global?.minAppVersionSkips;
+  if (skips !== undefined && (!Number.isInteger(skips) || skips < 0)) {
+    errors.push(
+      `minAppVersionSkips "${skips}" no es un entero >= 0: la app lo ignora y dejará saltar sin límite.`,
+    );
+  }
+
   // Los topics de push no admiten espacios, acentos ni mayúsculas. El editor
   // slugifica al guardar, pero un JSON importado a mano puede traerlos sucios.
   Object.entries(draft.delegations ?? {}).forEach(([id, d]) => {
