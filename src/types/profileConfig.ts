@@ -35,6 +35,10 @@ export interface GlobalConfig {
   maintenanceMode: boolean;
   maintenanceMessage?: string;
   minAppVersion: string;
+  /** «Ahora no» permitidos antes de ser estricto. Ausente = sin límite, 0 = estricto. */
+  minAppVersionSkips?: number;
+  /** false = sin Fotos en iPad (solo iPad). Ausente = true. */
+  fotosEnIpad?: boolean;
   appReviewMode?: boolean;
 }
 

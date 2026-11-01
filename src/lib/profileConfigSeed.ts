@@ -10,6 +10,7 @@ export const SEED_PROFILE_CONFIG: ProfileConfigData = {
     maintenanceMessage: '',
     minAppVersion: '0.0.0',
     appReviewMode: false,
+    fotosEnIpad: true,
   },
   profiles: {
     familia: {
