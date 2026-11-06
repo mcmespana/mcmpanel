@@ -200,8 +200,10 @@ export function SurveysSection() {
     let id = slugify(`${entry.id || entry.config.title || 'encuesta'}-copia`);
     let n = 2;
     while (existing.includes(id)) id = slugify(`${entry.id}-copia-${n++}`);
+    // `evaluationOpen` es legacy y solo vale sin `status`; la copia lleva status.
+    const { evaluationOpen: _legacy, ...base } = entry.config;
     const config: SurveyConfig = {
-      ...entry.config,
+      ...base,
       id,
       title: `${entry.config.title ?? 'Encuesta'} (copia)`,
       status: 'draft',

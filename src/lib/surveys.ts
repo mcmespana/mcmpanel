@@ -286,13 +286,61 @@ export function parseSurveysNode(node: unknown): SurveysTree {
   return { generics, index };
 }
 
+/**
+ * Espejo de `DEFAULT_APP_EVALUATION` (mcm-app/constants/evaluation.ts). Si
+ * `app/evaluationConfig` no tiene `data`, la app pinta estas preguntas desde el
+ * código; el panel tiene que ver (y poder duplicar) lo mismo que ve la app.
+ */
+export const DEFAULT_APP_EVALUATION: SurveyConfig = {
+  evaluationOpen: true,
+  title: 'Evalúa la app',
+  intro: 'Cuéntanos cómo te ha funcionado la app durante el evento.',
+  questions: [
+    { id: 'general', type: 'stars', label: '¿Cómo valoras la app en general?' },
+    {
+      id: 'errores',
+      type: 'text',
+      label: '¿Has encontrado algún error o fallo?',
+      placeholder: 'Pantalla o función que no iba bien…',
+      optional: true,
+    },
+    {
+      id: 'util',
+      type: 'text',
+      label: '¿Qué te ha resultado más útil?',
+      placeholder: 'Lo que más has usado…',
+      optional: true,
+    },
+    {
+      id: 'mejorar',
+      type: 'text',
+      label: '¿Qué echas en falta o mejorarías?',
+      placeholder: 'Tus ideas para la app…',
+      optional: true,
+    },
+    { id: 'recomendarias', type: 'yesno', label: '¿Recomendarías la app?', optional: true },
+  ],
+};
+
+/** Igual que `mergeEvaluationConfig` de la app: la remota gana campo a campo y
+ * sus `questions` (si hay alguna) sustituyen a las del fallback. */
+export function mergeWithDefaultConfig(fallback: SurveyConfig, remote?: SurveyConfig | null): SurveyConfig {
+  if (!remote) return fallback;
+  const questions =
+    Array.isArray(remote.questions) && remote.questions.length > 0 ? remote.questions : fallback.questions;
+  return { ...fallback, ...remote, questions };
+}
+
 /** Parsea `app/evaluationConfig` + `app/evaluations` en una entrada de la app. */
 export function parseAppEvaluation(configNode: unknown, responsesNode: unknown): SurveyEntry {
   const wrapper = (configNode && typeof configNode === 'object' ? configNode : {}) as {
     data?: SurveyConfig;
     updatedAt?: number | string;
   };
-  const config = (wrapper.data && typeof wrapper.data === 'object' ? wrapper.data : {}) as SurveyConfig;
+  const config = mergeWithDefaultConfig(
+    DEFAULT_APP_EVALUATION,
+    wrapper.data && typeof wrapper.data === 'object' ? wrapper.data : null,
+  );
   return {
     key: 'app',
     surveyClass: 'app',
