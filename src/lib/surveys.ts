@@ -1,7 +1,7 @@
 import { ref, set, update } from 'firebase/database';
 import { guardWrite } from '@/lib/firebaseRules';
 import { getDB } from '@/lib/firebase';
-import { slugify } from '@/lib/profileCatalog';
+import { slugify, TAB_LABELS, HOME_BUTTON_LABELS } from '@/lib/profileCatalog';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Encuestas y Evaluaciones — contrato de datos (ver docs / ENCUESTAS_CONTRATO.md)
@@ -320,6 +320,116 @@ export const DEFAULT_APP_EVALUATION: SurveyConfig = {
     },
     { id: 'recomendarias', type: 'yesno', label: '¿Recomendarías la app?', optional: true },
   ],
+};
+
+// ─── Plantillas de encuesta nueva ───────────────────────────────────────────────
+
+/** Secciones de la app por las que preguntar «qué usas» (ids y nombres del catálogo). */
+const USED_SECTIONS: QuestionOption[] = [
+  ...(['cancionero', 'contigo', 'calendario', 'fotos', 'comunica'] as const).map((id) => ({
+    value: id,
+    label: TAB_LABELS[id],
+  })),
+  { value: 'evangelio', label: HOME_BUTTON_LABELS.evangelio },
+  { value: 'eventos', label: 'Eventos y actividades' },
+  { value: 'notificaciones', label: 'Notificaciones' },
+];
+
+/**
+ * Plantilla «Evaluación de la app»: pensada para decidir, no solo para medir.
+ * Dos preguntas obligatorias (nota y recomendación: lo comparable en el tiempo) y el
+ * resto opcionales para que se complete en ~2 min. Cada bloque responde a algo
+ * accionable: satisfacción (general), lealtad (nps), a quién escuchamos (frecuencia y
+ * secciones), si encuentran lo que buscan (facilidad), estabilidad (fallos + dónde) y
+ * hoja de ruta (lo que gusta / lo que falta).
+ */
+export const APP_FEEDBACK_TEMPLATE: SurveyConfig = {
+  title: 'Evaluación de la app',
+  intro: 'Dos minutos para contarnos cómo te va con la app. Lo leemos todo y decide qué mejoramos.',
+  thanksTitle: '¡Gracias!',
+  thanksBody: 'Tu opinión nos ayuda a mejorar la app para todos 🙌',
+  emoji: '📱',
+  questions: [
+    { id: 'general', type: 'stars', label: '¿Qué nota le das a la app en general?' },
+    {
+      id: 'nps',
+      type: 'scale',
+      label: '¿Con qué probabilidad se la recomendarías a alguien de tu grupo?',
+      min: 0,
+      max: 10,
+      minLabel: 'Nada probable',
+      maxLabel: 'Seguro que sí',
+    },
+    {
+      id: 'frecuencia',
+      type: 'single',
+      label: '¿Con qué frecuencia la usas?',
+      optional: true,
+      options: [
+        { value: 'diaria', label: 'Casi todos los días' },
+        { value: 'semanal', label: 'Varias veces por semana' },
+        { value: 'mensual', label: 'Alguna vez al mes' },
+        { value: 'eventos', label: 'Solo en eventos o encuentros' },
+      ],
+    },
+    {
+      id: 'secciones',
+      type: 'multi',
+      label: '¿Qué partes de la app usas?',
+      optional: true,
+      options: USED_SECTIONS,
+    },
+    {
+      id: 'facilidad',
+      type: 'scale',
+      label: '¿Qué tal de fácil te resulta encontrar lo que buscas?',
+      min: 1,
+      max: 5,
+      minLabel: 'Muy difícil',
+      maxLabel: 'Muy fácil',
+      optional: true,
+    },
+    {
+      id: 'fallos',
+      type: 'single',
+      label: '¿Te ha dado problemas (se cierra, va lenta, algo no carga)?',
+      optional: true,
+      options: [
+        { value: 'nunca', label: 'No, me va bien' },
+        { value: 'alguna-vez', label: 'Alguna vez' },
+        { value: 'a-menudo', label: 'A menudo' },
+      ],
+    },
+    {
+      id: 'errores',
+      type: 'text',
+      label: 'Si algo falla, cuéntanos qué y en qué pantalla',
+      placeholder: 'Pantalla o función que no iba bien…',
+      optional: true,
+    },
+    {
+      id: 'gusta',
+      type: 'text',
+      label: '¿Qué es lo que más te gusta o más usas?',
+      placeholder: 'Lo que no cambiarías…',
+      optional: true,
+    },
+    {
+      id: 'falta',
+      type: 'text',
+      label: '¿Qué echas en falta o qué cambiarías?',
+      placeholder: 'Tus ideas para la app…',
+      optional: true,
+    },
+  ],
+};
+
+export const SURVEY_TEMPLATES: Record<string, { label: string; hint: string; config: SurveyConfig }> = {
+  'app-feedback': {
+    label: 'Evaluación de la app',
+    hint: '9 preguntas: nota, recomendación, uso, secciones, facilidad, fallos y sugerencias',
+    config: APP_FEEDBACK_TEMPLATE,
+  },
 };
 
 /** Igual que `mergeEvaluationConfig` de la app: la remota gana campo a campo y
