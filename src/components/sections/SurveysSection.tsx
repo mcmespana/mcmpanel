@@ -79,6 +79,7 @@ import {
   formatDateTime,
   STATUS_META,
   SURVEY_CLASS_LABELS,
+  SURVEY_TEMPLATES,
   type SurveyConfig,
   type SurveyEntry,
   type SurveyStatus,
@@ -157,7 +158,8 @@ export function SurveysSection() {
 
   const goList = () => setSearchParams({}, { replace: false });
   const goEdit = (key: string) => setSearchParams({ view: 'edit', key });
-  const goNew = () => setSearchParams({ view: 'new' });
+  const goNew = (template?: string) =>
+    setSearchParams(template ? { view: 'new', template } : { view: 'new' });
   const goResponses = (key: string) => setSearchParams({ view: 'responses', key });
 
   // ─── Acciones ────────────────────────────────────────────────────────────
@@ -200,8 +202,10 @@ export function SurveysSection() {
     let id = slugify(`${entry.id || entry.config.title || 'encuesta'}-copia`);
     let n = 2;
     while (existing.includes(id)) id = slugify(`${entry.id}-copia-${n++}`);
+    // `evaluationOpen` es legacy y solo vale sin `status`; la copia lleva status.
+    const { evaluationOpen: _legacy, ...base } = entry.config;
     const config: SurveyConfig = {
-      ...entry.config,
+      ...base,
       id,
       title: `${entry.config.title ?? 'Encuesta'} (copia)`,
       status: 'draft',
@@ -253,7 +257,13 @@ export function SurveysSection() {
             surveyClass: 'generic',
             id: '',
             label: 'Nueva encuesta',
-            config: { status: 'draft', accentColor: DEFAULT_SURVEY_ACCENT, emoji: '📋', questions: [] },
+            config: {
+              status: 'draft',
+              accentColor: DEFAULT_SURVEY_ACCENT,
+              emoji: '📋',
+              questions: [],
+              ...(SURVEY_TEMPLATES[searchParams.get('template') ?? '']?.config ?? {}),
+            },
             responses: [],
             configPath: 'surveys/',
           }
@@ -292,10 +302,29 @@ export function SurveysSection() {
             Crea encuestas, gestiona su ciclo de vida y analiza las respuestas.
           </p>
         </div>
-        <Button onClick={goNew} className="tech-glow">
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva encuesta
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button className="tech-glow">
+              <Plus className="mr-2 h-4 w-4" />
+              Nueva encuesta
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72">
+            <DropdownMenuItem onClick={() => goNew()}>
+              <Plus className="mr-2 h-4 w-4" /> En blanco
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {Object.entries(SURVEY_TEMPLATES).map(([key, t]) => (
+              <DropdownMenuItem key={key} onClick={() => goNew(key)} className="items-start">
+                <ListChecks className="mr-2 mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  <span className="block">Plantilla: {t.label}</span>
+                  <span className="block text-xs text-muted-foreground">{t.hint}</span>
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Filtros */}

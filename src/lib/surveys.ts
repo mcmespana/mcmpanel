@@ -1,7 +1,7 @@
 import { ref, set, update } from 'firebase/database';
 import { guardWrite } from '@/lib/firebaseRules';
 import { getDB } from '@/lib/firebase';
-import { slugify } from '@/lib/profileCatalog';
+import { slugify, TAB_LABELS, HOME_BUTTON_LABELS } from '@/lib/profileCatalog';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Encuestas y Evaluaciones — contrato de datos (ver docs / ENCUESTAS_CONTRATO.md)
@@ -286,13 +286,171 @@ export function parseSurveysNode(node: unknown): SurveysTree {
   return { generics, index };
 }
 
+/**
+ * Espejo de `DEFAULT_APP_EVALUATION` (mcm-app/constants/evaluation.ts). Si
+ * `app/evaluationConfig` no tiene `data`, la app pinta estas preguntas desde el
+ * código; el panel tiene que ver (y poder duplicar) lo mismo que ve la app.
+ */
+export const DEFAULT_APP_EVALUATION: SurveyConfig = {
+  evaluationOpen: true,
+  title: 'Evalúa la app',
+  intro: 'Cuéntanos cómo te ha funcionado la app durante el evento.',
+  questions: [
+    { id: 'general', type: 'stars', label: '¿Cómo valoras la app en general?' },
+    {
+      id: 'errores',
+      type: 'text',
+      label: '¿Has encontrado algún error o fallo?',
+      placeholder: 'Pantalla o función que no iba bien…',
+      optional: true,
+    },
+    {
+      id: 'util',
+      type: 'text',
+      label: '¿Qué te ha resultado más útil?',
+      placeholder: 'Lo que más has usado…',
+      optional: true,
+    },
+    {
+      id: 'mejorar',
+      type: 'text',
+      label: '¿Qué echas en falta o mejorarías?',
+      placeholder: 'Tus ideas para la app…',
+      optional: true,
+    },
+    { id: 'recomendarias', type: 'yesno', label: '¿Recomendarías la app?', optional: true },
+  ],
+};
+
+// ─── Plantillas de encuesta nueva ───────────────────────────────────────────────
+
+/** Secciones de la app por las que preguntar «qué usas» (ids y nombres del catálogo). */
+const USED_SECTIONS: QuestionOption[] = [
+  ...(['cancionero', 'contigo', 'calendario', 'fotos', 'comunica'] as const).map((id) => ({
+    value: id,
+    label: TAB_LABELS[id],
+  })),
+  { value: 'evangelio', label: HOME_BUTTON_LABELS.evangelio },
+  { value: 'eventos', label: 'Eventos y actividades' },
+  { value: 'notificaciones', label: 'Notificaciones' },
+];
+
+/**
+ * Plantilla «Evaluación de la app»: pensada para decidir, no solo para medir.
+ * Dos preguntas obligatorias (nota y recomendación: lo comparable en el tiempo) y el
+ * resto opcionales para que se complete en ~2 min. Cada bloque responde a algo
+ * accionable: satisfacción (general), lealtad (nps), a quién escuchamos (frecuencia y
+ * secciones), si encuentran lo que buscan (facilidad), estabilidad (fallos + dónde) y
+ * hoja de ruta (lo que gusta / lo que falta).
+ */
+export const APP_FEEDBACK_TEMPLATE: SurveyConfig = {
+  title: 'Evaluación de la app',
+  intro: 'Dos minutos para contarnos cómo te va con la app. Lo leemos todo y decide qué mejoramos.',
+  thanksTitle: '¡Gracias!',
+  thanksBody: 'Tu opinión nos ayuda a mejorar la app para todos 🙌',
+  emoji: '📱',
+  questions: [
+    { id: 'general', type: 'stars', label: '¿Qué nota le das a la app en general?' },
+    {
+      id: 'nps',
+      type: 'scale',
+      label: '¿Con qué probabilidad se la recomendarías a alguien de tu grupo?',
+      min: 0,
+      max: 10,
+      minLabel: 'Nada probable',
+      maxLabel: 'Seguro que sí',
+    },
+    {
+      id: 'frecuencia',
+      type: 'single',
+      label: '¿Con qué frecuencia la usas?',
+      optional: true,
+      options: [
+        { value: 'diaria', label: 'Casi todos los días' },
+        { value: 'semanal', label: 'Varias veces por semana' },
+        { value: 'mensual', label: 'Alguna vez al mes' },
+        { value: 'eventos', label: 'Solo en eventos o encuentros' },
+      ],
+    },
+    {
+      id: 'secciones',
+      type: 'multi',
+      label: '¿Qué partes de la app usas?',
+      optional: true,
+      options: USED_SECTIONS,
+    },
+    {
+      id: 'facilidad',
+      type: 'scale',
+      label: '¿Qué tal de fácil te resulta encontrar lo que buscas?',
+      min: 1,
+      max: 5,
+      minLabel: 'Muy difícil',
+      maxLabel: 'Muy fácil',
+      optional: true,
+    },
+    {
+      id: 'fallos',
+      type: 'single',
+      label: '¿Te ha dado problemas (se cierra, va lenta, algo no carga)?',
+      optional: true,
+      options: [
+        { value: 'nunca', label: 'No, me va bien' },
+        { value: 'alguna-vez', label: 'Alguna vez' },
+        { value: 'a-menudo', label: 'A menudo' },
+      ],
+    },
+    {
+      id: 'errores',
+      type: 'text',
+      label: 'Si algo falla, cuéntanos qué y en qué pantalla',
+      placeholder: 'Pantalla o función que no iba bien…',
+      optional: true,
+    },
+    {
+      id: 'gusta',
+      type: 'text',
+      label: '¿Qué es lo que más te gusta o más usas?',
+      placeholder: 'Lo que no cambiarías…',
+      optional: true,
+    },
+    {
+      id: 'falta',
+      type: 'text',
+      label: '¿Qué echas en falta o qué cambiarías?',
+      placeholder: 'Tus ideas para la app…',
+      optional: true,
+    },
+  ],
+};
+
+export const SURVEY_TEMPLATES: Record<string, { label: string; hint: string; config: SurveyConfig }> = {
+  'app-feedback': {
+    label: 'Evaluación de la app',
+    hint: '9 preguntas: nota, recomendación, uso, secciones, facilidad, fallos y sugerencias',
+    config: APP_FEEDBACK_TEMPLATE,
+  },
+};
+
+/** Igual que `mergeEvaluationConfig` de la app: la remota gana campo a campo y
+ * sus `questions` (si hay alguna) sustituyen a las del fallback. */
+export function mergeWithDefaultConfig(fallback: SurveyConfig, remote?: SurveyConfig | null): SurveyConfig {
+  if (!remote) return fallback;
+  const questions =
+    Array.isArray(remote.questions) && remote.questions.length > 0 ? remote.questions : fallback.questions;
+  return { ...fallback, ...remote, questions };
+}
+
 /** Parsea `app/evaluationConfig` + `app/evaluations` en una entrada de la app. */
 export function parseAppEvaluation(configNode: unknown, responsesNode: unknown): SurveyEntry {
   const wrapper = (configNode && typeof configNode === 'object' ? configNode : {}) as {
     data?: SurveyConfig;
     updatedAt?: number | string;
   };
-  const config = (wrapper.data && typeof wrapper.data === 'object' ? wrapper.data : {}) as SurveyConfig;
+  const config = mergeWithDefaultConfig(
+    DEFAULT_APP_EVALUATION,
+    wrapper.data && typeof wrapper.data === 'object' ? wrapper.data : null,
+  );
   return {
     key: 'app',
     surveyClass: 'app',
