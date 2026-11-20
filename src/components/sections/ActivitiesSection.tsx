@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
+import { heroSvgProblem, previewHeroSvgSrc } from '@/lib/heroSvg';
 import { AppsSubsection } from './activities/AppsSubsection';
 import { CompartiendoSubsection } from './activities/CompartiendoSubsection';
 import { ContactosSubsection } from './activities/ContactosSubsection';
@@ -39,6 +40,8 @@ interface EventMeta {
   bannerText?: string;
   /** Logo del hub del evento en la app (URL https en Firebase Storage). */
   heroImageUrl?: string;
+  /** Logo dibujado con código (SVG como texto); se usa si no hay imagen subida. */
+  heroSvg?: string;
   updatedAt?: string;
 }
 
@@ -548,6 +551,42 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
                 del evento: si el logo es oscuro, sube una versión en blanco. Sin
                 logo se enseña el emblema de estrellitas.
               </p>
+            </div>
+
+            {/* Alternativa al logo subido: un SVG escrito a mano (o por la IA).
+                Se guarda como texto en `_meta.heroSvg`; `currentColor` se pinta
+                con la tinta del hero (se lee sobre cualquier color de evento). */}
+            <div className="space-y-1 sm:col-span-2">
+              <Label htmlFor="event-svg" className="text-xs">
+                Logo dibujado con código (SVG) — se usa si no hay logo subido
+              </Label>
+              <Textarea
+                id="event-svg"
+                className="font-mono text-xs min-h-[120px] resize-y bg-muted/30"
+                spellCheck={false}
+                placeholder='<svg viewBox="0 0 120 120"> … fill="currentColor" … </svg>'
+                value={eventMeta.heroSvg ?? ''}
+                onChange={(e) => handleEventMetaUpdate({ heroSvg: e.target.value })}
+              />
+              {eventMeta.heroSvg?.trim() && (
+                <div className="flex items-center gap-3 pt-1">
+                  <div
+                    className="rounded-xl p-2"
+                    style={{
+                      background: /^#[0-9a-fA-F]{6}$/.test(eventMeta.tintColor ?? '') ? eventMeta.tintColor : '#8888',
+                    }}
+                  >
+                    <img
+                      alt="Vista previa del logo"
+                      className="h-20 w-20"
+                      src={previewHeroSvgSrc(eventMeta.heroSvg, '#000000')}
+                    />
+                  </div>
+                  <p className={`text-xs ${heroSvgProblem(eventMeta.heroSvg) ? 'text-destructive' : 'text-muted-foreground'}`}>
+                    {heroSvgProblem(eventMeta.heroSvg) ?? 'La app lo pintará con la tinta del hero donde pongas currentColor.'}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
