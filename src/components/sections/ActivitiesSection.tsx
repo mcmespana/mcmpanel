@@ -248,15 +248,18 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
     setSelectedSubsection(key);
   };
 
-  const handleHorarioNombre = (key: SubsectionId, nombre: string) => {
+  const handleHorarioMeta = (key: SubsectionId, patch: { nombre?: string; color?: string | null }) => {
     if (!selectedActivity) return;
     const node = currentActivityData?.[key] ?? {};
+    const meta = { ...node.meta, ...patch };
+    // Color vacío = automático: se quita el campo (null lo borra en Firebase).
+    if (!meta.color) meta.color = null;
     onUpdate(
       {
         ...data,
         [selectedActivity]: {
           ...currentActivityData,
-          [key]: { ...node, meta: { ...node.meta, nombre }, updatedAt: new Date().toISOString() },
+          [key]: { ...node, meta, updatedAt: new Date().toISOString() },
         },
       },
       [selectedActivity, key],
@@ -315,8 +318,31 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
                   className="h-8 text-sm max-w-sm"
                   placeholder="Pre-monitores 1"
                   value={subsectionData?.meta?.nombre ?? ''}
-                  onChange={(e) => handleHorarioNombre(selectedSubsection, e.target.value)}
+                  onChange={(e) => handleHorarioMeta(selectedSubsection, { nombre: e.target.value })}
                 />
+                <Label htmlFor="horario-color" className="text-xs pt-2 block">
+                  Color (vacío = automático: el primero lleva el del evento y el resto, colores que combinan)
+                </Label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="color"
+                    className="h-8 w-10 rounded border border-border bg-card cursor-pointer p-0.5 shrink-0"
+                    value={/^#[0-9a-fA-F]{6}$/.test(subsectionData?.meta?.color ?? '') ? subsectionData.meta.color : '#888888'}
+                    onChange={(e) => handleHorarioMeta(selectedSubsection, { color: e.target.value.toUpperCase() })}
+                  />
+                  <Input
+                    id="horario-color"
+                    className="h-8 text-sm max-w-[10rem]"
+                    placeholder="Automático"
+                    value={subsectionData?.meta?.color ?? ''}
+                    onChange={(e) => handleHorarioMeta(selectedSubsection, { color: e.target.value })}
+                  />
+                  {subsectionData?.meta?.color && (
+                    <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleHorarioMeta(selectedSubsection, { color: null })}>
+                      Automático
+                    </Button>
+                  )}
+                </div>
               </Card>
               <HorarioSubsection data={subsectionData} onUpdate={handleSubsectionUpdate} />
             </div>
