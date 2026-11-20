@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 import { AppsSubsection } from './activities/AppsSubsection';
 import { CompartiendoSubsection } from './activities/CompartiendoSubsection';
 import { ContactosSubsection } from './activities/ContactosSubsection';
@@ -36,6 +37,8 @@ interface EventMeta {
   title?: string;
   tintColor?: string;
   bannerText?: string;
+  /** Logo del hub del evento en la app (URL https en Firebase Storage). */
+  heroImageUrl?: string;
   updatedAt?: string;
 }
 
@@ -442,8 +445,8 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
           <div className="flex gap-2 rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>
-              La app aplica <strong>Título</strong>, <strong>Color</strong> y{' '}
-              <strong>Banner</strong> al <strong>evento activo</strong> sin
+              La app aplica <strong>Título</strong>, <strong>Color</strong>,{' '}
+              <strong>Banner</strong> y <strong>Logo</strong> al <strong>evento activo</strong> sin
               publicar versión. El <strong>Estado</strong> (activo/archivado) y
               los eventos que no sean el activo aún dependen del registry de la
               app (<code className="bg-muted px-1 rounded">constants/events.ts</code>);
@@ -524,6 +527,27 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
                 value={eventMeta.bannerText ?? ''}
                 onChange={(e) => handleEventMetaUpdate({ bannerText: e.target.value })}
               />
+            </div>
+
+            {/* Logo del hub: sustituye al emblema de estrellitas. Se sube a
+                Firebase Storage y la app lo lee de `_meta.heroImageUrl`. */}
+            <div className="space-y-1 sm:col-span-2">
+              <Label className="text-xs">Logo del evento (sale en la cabecera del hub)</Label>
+              <ImageUploadCropper
+                value={eventMeta.heroImageUrl ?? ''}
+                onChange={(url) => handleEventMetaUpdate({ heroImageUrl: url })}
+                storagePath={`eventLogos/${selectedActivity}`}
+                aspectRatio={1}
+                maxWidth={512}
+                maxHeight={512}
+                quality={0.92}
+                className="mt-1 max-w-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Cuadrado, PNG/WebP con fondo transparente. Se pinta sobre el color
+                del evento: si el logo es oscuro, sube una versión en blanco. Sin
+                logo se enseña el emblema de estrellitas.
+              </p>
             </div>
           </div>
 
