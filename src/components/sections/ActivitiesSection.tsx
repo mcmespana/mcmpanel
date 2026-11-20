@@ -26,7 +26,9 @@ import { ProfundizaSubsection } from './activities/ProfundizaSubsection';
 import { VisitasSubsection } from './activities/VisitasSubsection';
 
 export type ActivityId = string;
-export type SubsectionId = 'apps' | 'compartiendo' | 'contactos' | 'grupos' | 'horario' | 'materiales' | 'profundiza' | 'visitas';
+// Las fijas (apps, horario…) más los horarios numerados `horario1`, `horario2`…
+// (varios horarios en un evento, ver mcmapp/docs/funcionalidades/EVENTOS.md).
+export type SubsectionId = string;
 type EventStatus = 'active' | 'archived';
 
 interface EventMeta {
@@ -73,6 +75,29 @@ const subsections = [
   { id: 'visitas' as SubsectionId, title: 'Visitas', description: 'Lugares y visitas programadas' },
 ];
 
+// Varios horarios en un evento: `horario1`, `horario2`… cada uno con
+// `meta.nombre` (lo que la app enseña en el selector). El tope y la convención
+// son los de la app (`mcm-app/utils/eventHorarios.ts`).
+const MAX_HORARIOS = 8;
+const NUMBERED_HORARIO = /^horario(\d+)$/;
+const horarioNumber = (id: string): number | null => {
+  const m = NUMBERED_HORARIO.exec(id);
+  return m ? Number(m[1]) : null;
+};
+
+/** Título y descripción de una subsección, fija o `horarioN`. */
+const subsectionInfo = (id: SubsectionId, node?: { meta?: { nombre?: string } }) => {
+  const fixed = subsections.find((s) => s.id === id);
+  if (fixed) return fixed;
+  const n = horarioNumber(id);
+  const nombre = node?.meta?.nombre?.trim();
+  return {
+    id,
+    title: nombre ? `Horario ${n} · ${nombre}` : `Horario ${n ?? id}`,
+    description: 'Programación de eventos (selector de la app)',
+  };
+};
+
 const NONE = '__none__';
 
 export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
@@ -96,6 +121,18 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
   const activities = Object.keys(data || {}).filter((k) => k !== '_meta');
   const currentActivityData = selectedActivity ? data?.[selectedActivity] : null;
   const eventMeta: EventMeta = currentActivityData?._meta ?? {};
+
+  // Horarios numerados que ya tiene el evento, en orden.
+  const numberedHorarios: number[] = Object.keys(currentActivityData ?? {})
+    .map(horarioNumber)
+    .filter((n): n is number => n !== null)
+    .sort((a, b) => a - b);
+  // Cada `horarioN` va justo detrás del `horario` de siempre.
+  const allSubsections = subsections.flatMap((sub) =>
+    sub.id === 'horario'
+      ? [sub, ...numberedHorarios.map((n) => subsectionInfo(`horario${n}`, currentActivityData?.[`horario${n}`]))]
+      : [sub],
+  );
 
   const handleGlobalMetaUpdate = (patch: Partial<GlobalMeta>) => {
     onUpdate(
@@ -171,10 +208,52 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
         ...data,
         [selectedActivity]: {
           ...currentActivityData,
-          [selectedSubsection]: { ...subsectionData, updatedAt: new Date().toISOString() },
+          // Se conservan los campos hermanos de `data` que el editor no maneja
+          // (`hidden`, `meta.nombre` de los horarios…): antes se perdían al editar.
+          [selectedSubsection]: {
+            ...currentActivityData?.[selectedSubsection],
+            ...subsectionData,
+            updatedAt: new Date().toISOString(),
+          },
         },
       },
       [selectedActivity, selectedSubsection],
+    );
+  };
+
+  const handleAddHorario = () => {
+    if (!selectedActivity) return;
+    const next = (numberedHorarios[numberedHorarios.length - 1] ?? 0) + 1;
+    if (next > MAX_HORARIOS) {
+      toast({ title: 'Máximo de horarios', description: `Un evento admite hasta ${MAX_HORARIOS} horarios.`, variant: 'destructive' });
+      return;
+    }
+    const key = `horario${next}`;
+    onUpdate(
+      {
+        ...data,
+        [selectedActivity]: {
+          ...currentActivityData,
+          [key]: { data: [], hidden: false, meta: { nombre: `Horario ${next}` }, updatedAt: new Date().toISOString() },
+        },
+      },
+      [selectedActivity, key],
+    );
+    setSelectedSubsection(key);
+  };
+
+  const handleHorarioNombre = (key: SubsectionId, nombre: string) => {
+    if (!selectedActivity) return;
+    const node = currentActivityData?.[key] ?? {};
+    onUpdate(
+      {
+        ...data,
+        [selectedActivity]: {
+          ...currentActivityData,
+          [key]: { ...node, meta: { ...node.meta, nombre }, updatedAt: new Date().toISOString() },
+        },
+      },
+      [selectedActivity, key],
     );
   };
 
@@ -216,7 +295,28 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
       case 'materiales': return <MaterialesSubsection data={subsectionData} onUpdate={handleSubsectionUpdate} />;
       case 'profundiza': return <ProfundizaSubsection data={subsectionData} onUpdate={handleSubsectionUpdate} />;
       case 'visitas':    return <VisitasSubsection data={subsectionData} onUpdate={handleSubsectionUpdate} />;
-      default:           return null;
+      default:
+        // Horarios numerados: el mismo editor + el nombre que enseña el selector.
+        if (horarioNumber(selectedSubsection) !== null) {
+          return (
+            <div className="space-y-4">
+              <Card className="p-4 space-y-1.5 bg-card/50 border-border/50">
+                <Label htmlFor="horario-nombre" className="text-xs">
+                  Nombre del horario (lo que ve la gente en el selector de la app)
+                </Label>
+                <Input
+                  id="horario-nombre"
+                  className="h-8 text-sm max-w-sm"
+                  placeholder="Pre-monitores 1"
+                  value={subsectionData?.meta?.nombre ?? ''}
+                  onChange={(e) => handleHorarioNombre(selectedSubsection, e.target.value)}
+                />
+              </Card>
+              <HorarioSubsection data={subsectionData} onUpdate={handleSubsectionUpdate} />
+            </div>
+          );
+        }
+        return null;
     }
   };
 
@@ -237,10 +337,10 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
             </Button>
             <div className="min-w-0">
               <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent truncate">
-                {subsections.find(s => s.id === selectedSubsection)?.title}
+                {subsectionInfo(selectedSubsection, currentActivityData?.[selectedSubsection]).title}
               </h2>
               <p className="text-sm text-muted-foreground mt-0.5 truncate">
-                {selectedActivity} — {subsections.find(s => s.id === selectedSubsection)?.description}
+                {selectedActivity} — {subsectionInfo(selectedSubsection, currentActivityData?.[selectedSubsection]).description}
               </p>
             </div>
           </div>
@@ -445,7 +545,7 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
 
         {/* Subsections grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {subsections.map((subsection) => {
+          {allSubsections.map((subsection) => {
             const subsectionData = currentActivityData?.[subsection.id];
             const hasData = subsectionData?.data && (
               Array.isArray(subsectionData.data)
@@ -490,6 +590,25 @@ export function ActivitiesSection({ data, onUpdate }: ActivitiesSectionProps) {
               </Card>
             );
           })}
+        </div>
+
+        {/* Varios horarios en un evento (Despierta / Pre-monitores…) */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 self-start"
+            onClick={handleAddHorario}
+            disabled={numberedHorarios.length >= MAX_HORARIOS}
+          >
+            <Plus className="w-4 h-4" />
+            Añadir otro horario
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Si el evento tiene programas distintos a la vez, crea un horario por
+            programa (con su nombre): la app enseña un selector. Sin horarios
+            numerados se usa el «Horario» de siempre.
+          </p>
         </div>
       </div>
     );
