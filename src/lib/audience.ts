@@ -49,7 +49,10 @@ export const EMPTY_AUDIENCE: AudienceFilter = {
 
 /** ¿Hay al menos un eje activo? Si no, el envío va a todos los dispositivos. */
 export function audienceHasAxis(a: AudienceFilter): boolean {
-  return a.todos || a.perfiles.length > 0 || a.delegaciones.length > 0 || !!a.eventId;
+  // Tolerante: Firebase RTDB no guarda arrays vacíos, así que una audiencia
+  // leída de /scheduledNotifications o /notifications puede venir sin
+  // `perfiles` o sin `delegaciones`.
+  return !!a.todos || !!a.perfiles?.length || !!a.delegaciones?.length || !!a.eventId;
 }
 
 /** Topic que identifica la suscripción opt-in a un evento concreto. */
@@ -126,7 +129,11 @@ export function summarizeAudience(
   a: AudienceFilter | null | undefined,
   opts: SummarizeOptions = {},
 ): string {
-  if (!a || !audienceHasAxis(a)) return 'Todos los dispositivos';
+  // Normaliza primero: una audiencia leída de Firebase pierde los arrays vacíos
+  // (`perfiles: []` vuelve como undefined) y `.length` reventaba la sección entera.
+  const norm = normalizeAudience(a);
+  if (!norm) return 'Todos los dispositivos';
+  a = norm;
 
   const delLabel = opts.delegationLabel ?? ((id) => id);
   const evLabel = opts.eventLabel ?? ((id) => id);
