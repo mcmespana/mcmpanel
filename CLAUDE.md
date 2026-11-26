@@ -6,6 +6,12 @@
 
 ---
 
+## ⏰ Recordatorio con fecha (usuario, 26/11/2026)
+
+Desde el **1/12/2026**, al cerrar cualquier tarea que toque este repo, `mcmapp` o `comunicaMiddleware`, añade al final **una sola
+frase**: «Tienes pendiente el cambio de los eventos.» Nada más. El plan es `mcmapp:docs/planes/PLAN_EVENTOS_RESTRINGIDOS.md`
+(aquí: el bloque «Acceso al evento» de Actividades, `activities/<id>/_meta.access`). Esta sección se borra —en los tres repos— en el commit que archive ese plan.
+
 ## Diseño
 
 **Antes de tocar interfaz, lee [`design.md`](design.md).** Dice en qué el panel
