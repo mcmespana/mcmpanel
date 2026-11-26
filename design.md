@@ -39,6 +39,14 @@ componente que copies de la documentación de shadcn asume claro por defecto:
 compruébalo antes de darlo por bueno. **No añadas un tema claro** sin
 pedírselo al usuario — es más superficie que mantener a cambio de nada.
 
+**Excepción sancionada: los informes.** La página pública `/informe/<slug>`,
+el PDF y las imágenes para WhatsApp (y su vista previa dentro del panel) NO son
+panel: son lo que recibe la gente de MCM en el móvil. Van en claro, con la marca
+de la app y fuente del sistema, con los tokens `--report-*` (`report-*` en
+Tailwind) y solo dentro de `.report-surface`. No es un tema claro del panel:
+no lo uses fuera de `src/components/report/` y `src/pages/PublicReport.tsx`.
+El acento de la encuesta va solo como relleno (barras, bandas), nunca como texto.
+
 Tokens en `src/index.css` (HSL, formato shadcn) y `tailwind.config.ts`. Como en
 la app: **no inventes, no redeclares, no alias**. Si falta un color, se añade
 como variable con nombre semántico.

@@ -10,17 +10,23 @@ import {
   isAnswered,
   responseTime,
   formatDateTime,
+  visibleQuestionIds,
   type AnswerValue,
   type SurveyQuestion,
   type SurveyResponse,
 } from '@/lib/surveys';
+import { commentId } from '@/lib/surveyReport';
 
 export function ResponsesIndividual({
   responses,
   questions,
+  favoriteIds = [],
+  onToggleFavorite,
 }: {
   responses: SurveyResponse[];
   questions: SurveyQuestion[];
+  favoriteIds?: string[];
+  onToggleFavorite?: (id: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const [index, setIndex] = useState(0);
@@ -132,12 +138,45 @@ export function ResponsesIndividual({
 
             {/* Respuestas */}
             <div className="space-y-5">
-              {questions.map((q) => (
-                <div key={q.id} className="space-y-1.5">
-                  <p className="text-sm font-medium text-muted-foreground">{q.label}</p>
-                  <AnswerView question={q} value={getAnswer(current, q.id)} />
-                </div>
-              ))}
+              {(() => {
+                // Solo las preguntas que la app le enseñó (rutas con showIf).
+                const shown = visibleQuestionIds(questions, current.answers);
+                let lastSection: string | undefined;
+                return questions
+                  .filter((q) => shown.has(q.id))
+                  .map((q) => {
+                    const header = q.section && q.section !== lastSection ? q.section : null;
+                    lastSection = q.section;
+                    const value = getAnswer(current, q.id);
+                    const favId = commentId(q.id, current);
+                    const canFav = q.type === 'text' && isAnswered(q, value) && onToggleFavorite;
+                    const fav = favoriteIds.includes(favId);
+                    return (
+                      <div key={q.id} className="space-y-1.5">
+                        {header && (
+                          <p className="pt-2 text-[10px] font-semibold uppercase tracking-wide text-primary/80">{header}</p>
+                        )}
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium text-muted-foreground">{q.label}</p>
+                          {canFav && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={cn('h-7 w-7 flex-shrink-0 p-0', fav ? 'text-warning' : 'text-muted-foreground')}
+                              aria-pressed={fav}
+                              aria-label={fav ? 'Quitar de favoritos' : 'Marcar como favorito (sale en el informe)'}
+                              title="Favorito: sale en «Lo más destacado» del informe"
+                              onClick={() => onToggleFavorite(favId)}
+                            >
+                              <Star className="h-4 w-4" fill={fav ? 'currentColor' : 'transparent'} />
+                            </Button>
+                          )}
+                        </div>
+                        <AnswerView question={q} value={value} />
+                      </div>
+                    );
+                  });
+              })()}
             </div>
           </CardContent>
         </Card>
@@ -210,6 +249,30 @@ function AnswerView({ question, value }: { question: SurveyQuestion; value: Answ
               <Badge key={v} variant="secondary">
                 {label}
               </Badge>
+            );
+          })}
+        </div>
+      );
+    }
+    case 'ratings': {
+      const map = value as Record<string, number>;
+      return (
+        <div className="space-y-1">
+          {(question.items ?? []).map((it) => {
+            const n = map[it.value];
+            return (
+              <div key={it.value} className="flex items-center gap-2 text-sm">
+                <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                {typeof n === 'number' && n > 0 ? (
+                  <span className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star key={s} className="h-3.5 w-3.5 text-warning" fill={s <= n ? 'currentColor' : 'transparent'} />
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-xs italic text-muted-foreground/60">sin valorar</span>
+                )}
+              </div>
             );
           })}
         </div>

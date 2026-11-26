@@ -42,6 +42,15 @@ export default {
 					DEFAULT: 'hsl(var(--destructive))',
 					foreground: 'hsl(var(--destructive-foreground))'
 				},
+				report: {
+					bg: 'hsl(var(--report-bg))',
+					card: 'hsl(var(--report-card))',
+					sunken: 'hsl(var(--report-sunken))',
+					text: 'hsl(var(--report-text))',
+					muted: 'hsl(var(--report-muted))',
+					border: 'hsl(var(--report-border))',
+					brand: 'hsl(var(--report-brand))'
+				},
 				warning: {
 					DEFAULT: 'hsl(var(--warning))',
 					foreground: 'hsl(var(--warning-foreground))'

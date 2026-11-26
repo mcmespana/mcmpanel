@@ -53,7 +53,7 @@ server-side; los endpoints `api/notifications/*` solo protegen el cron con
 | Wordle | `/wordle` | `/wordle` | Dormido en la app |
 | Actividades | `/actividades` | `/activities` (+ legacy `/jubileo`) | Eventos y sus subsecciones. `activities/_meta = { updatedAt, data: { activeEventId } }` marca el evento activo global. **Varios horarios en un evento**: nodos `horario1`…`horario8` (`{ updatedAt, data, meta: { nombre, color? } }`; sin `color` la app calcula uno que combina con el del evento); la app enseña un selector con los nombres (convención en `mcmapp/docs/funcionalidades/EVENTOS.md`). Al guardar una subsección se conservan `hidden` y `meta`. **Logo del evento**: `activities/<id>/_meta.heroImageUrl` (se sube a Storage desde los metadatos del evento; la app lo pinta en el hub en vez del emblema de estrellitas) o, alternativa, `_meta.heroSvg` (SVG como texto, validado: `src/lib/heroSvg.ts` espeja `mcm-app/utils/eventHeroSvg.ts`; la imagen subida manda sobre el SVG) |
 | Notificaciones | `/notificaciones` | `/notifications`, `/scheduledNotifications`, `/pushTokens` | Composer con audiencia de 4 ejes (todos/perfil/delegación/evento) + programadas + pestaña **Silenciosas** (escribe en `/notifications` sin push; edita/desactiva/borra registros, vía `api/notifications/silent.ts`) |
-| Encuestas | `/encuestas` | `/surveys` | Encuestas/evaluaciones (contrato en mcmapp) |
+| Encuestas | `/encuestas` | `/surveys`, `/surveyReports` | Encuestas/evaluaciones (contrato en mcmapp). Soporta todo el contrato: `ratings`, `maxSelect`, `section` y rutas `showIf` (editor, vista previa, análisis y export). Pestaña **Informe**: PDF, imágenes para WhatsApp y **enlaces públicos** `/informe/<slug>` (página sin login que lee `surveyReports/<slug>/data`, una foto ya agregada). Ver `docs/INFORMES.md` |
 | Coros | `/coros` | `/choirs`, `/choirSessions/<choirId>`, `/playlistShares` | Coros de los que cuelgan las playlists compartidas. Los crea la gente desde la app (sin login): aquí se borran, se renombran y se **retoca la fecha** de cada playlist, que es lo que ordena el histórico y decide cuál es «la última». Escribe con `update()`/`remove()` granular, NO por el guardado de nodo completo |
 | Usuarios | `/usuarios` | `/users` | Solo escribe `users/{uid}/isAdmin` |
 | Perfiles | `/perfiles` | `/profileConfig` | Perfiles, delegaciones, overrides, flags globales, modo revisión. `delegationList` **se deriva** de `delegations` al guardar (la app la ignora y hace lo mismo): no se edita a mano |
@@ -136,6 +136,8 @@ npm run preview    # smoke test del build
 | Seed de profileConfig | `src/lib/profileConfigSeed.ts` |
 | Modo revisión de stores | `src/lib/appReviewMode.ts` |
 | Encuestas | `src/lib/surveys.ts` |
+| Informes (modelo, export, enlaces) | `src/lib/surveyReport.ts`, `src/lib/reportExport.ts`, `src/lib/reportShares.ts`, `docs/INFORMES.md` |
+| Página pública de informe (sin login) | `src/pages/PublicReport.tsx` (ruta `/informe/<slug>`, detectada en `App.tsx` antes del login) |
 | Coros | `src/lib/choirs.ts` + `src/components/sections/ChoirsSection.tsx` |
 
 ## Seguridad (estado real)

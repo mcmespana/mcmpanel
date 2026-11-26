@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,10 +8,24 @@ import Index from "./pages/Index";
 import { LoginPage } from "./components/LoginPage";
 import { isAuthenticated } from "./lib/auth";
 
+// /informe/<slug> es PÚBLICA: la abre cualquiera con el enlace, sin código de
+// acceso. Va en su propio chunk para no cargar el panel entero en el móvil.
+const PublicReport = lazy(() => import("./pages/PublicReport"));
+const PUBLIC_REPORT = /^\/informe\/([a-z0-9-]{3,64})\/?$/;
+
 const queryClient = new QueryClient();
 
 const App = () => {
   const [authed, setAuthed] = useState(isAuthenticated());
+
+  const publicMatch = window.location.pathname.match(PUBLIC_REPORT);
+  if (publicMatch) {
+    return (
+      <Suspense fallback={null}>
+        <PublicReport slug={publicMatch[1]} />
+      </Suspense>
+    );
+  }
 
   if (!authed) {
     return <LoginPage onLogin={() => setAuthed(true)} />;

@@ -15,6 +15,7 @@ import {
   Loader2,
   MessageSquare,
   ListChecks,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -61,6 +62,8 @@ import { slugify } from '@/lib/profileCatalog';
 import { SurveyEditor } from './surveys/SurveyEditor';
 import { ResponsesIndividual } from './surveys/ResponsesIndividual';
 import { ResponsesAnalysis } from './surveys/ResponsesAnalysis';
+import { ReportBuilder } from './surveys/ReportBuilder';
+import { panelFavoritesKey, useFavorites } from '@/lib/favorites';
 import {
   parseSurveysNode,
   parseAppEvaluation,
@@ -528,6 +531,14 @@ function ResponsesView({
   onEdit: () => void;
 }) {
   const questions = useMemo(() => questionsForAnalysis(entry), [entry]);
+  const favorites = useFavorites(panelFavoritesKey(entry.key));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') ?? 'analysis';
+  const setTab = (t: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', t);
+    setSearchParams(next, { replace: true });
+  };
   const status = effectiveStatus(entry.config);
   const meta = STATUS_META[status];
 
@@ -573,27 +584,52 @@ function ResponsesView({
         </div>
       </div>
 
-      <Tabs defaultValue="analysis" className="space-y-4">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList className="grid w-full max-w-lg grid-cols-3">
           <TabsTrigger value="analysis">
             <BarChart3 className="mr-2 h-4 w-4" /> Análisis
           </TabsTrigger>
           <TabsTrigger value="individual">
             <MessageSquare className="mr-2 h-4 w-4" /> Individuales
           </TabsTrigger>
+          <TabsTrigger value="report">
+            <FileText className="mr-2 h-4 w-4" /> Informe
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="analysis">
           {questions.length === 0 ? (
             <EmptyQuestions />
           ) : (
-            <ResponsesAnalysis responses={entry.responses} questions={questions} />
+            <ResponsesAnalysis
+              responses={entry.responses}
+              questions={questions}
+              favoriteIds={favorites.ids}
+              onToggleFavorite={favorites.toggle}
+            />
           )}
         </TabsContent>
         <TabsContent value="individual">
           {questions.length === 0 ? (
             <EmptyQuestions />
           ) : (
-            <ResponsesIndividual responses={entry.responses} questions={questions} />
+            <ResponsesIndividual
+              responses={entry.responses}
+              questions={questions}
+              favoriteIds={favorites.ids}
+              onToggleFavorite={favorites.toggle}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="report">
+          {questions.length === 0 ? (
+            <EmptyQuestions />
+          ) : (
+            <ReportBuilder
+              entry={entry}
+              questions={questions}
+              favoriteIds={favorites.ids}
+              onToggleFavorite={favorites.toggle}
+            />
           )}
         </TabsContent>
       </Tabs>

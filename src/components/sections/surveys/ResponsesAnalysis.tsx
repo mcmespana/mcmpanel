@@ -19,6 +19,8 @@ import {
   Info,
   Filter,
   TrendingUp,
+  Star,
+  GitBranch,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +43,8 @@ import {
 import {
   aggregateQuestion,
   dedupResponses,
+  describeShowIf,
+  eligibleResponses,
   filterResponses,
   segmentOptions,
   responseTime,
@@ -52,6 +56,8 @@ import {
   type SurveyQuestion,
   type SurveyResponse,
 } from '@/lib/surveys';
+import { commentId } from '@/lib/surveyReport';
+import { cn } from '@/lib/utils';
 
 const PRIMARY = 'hsl(197 89% 61%)';
 const ACCENT = 'hsl(166 67% 51%)';
@@ -65,9 +71,13 @@ const ALL = '__all';
 export function ResponsesAnalysis({
   responses,
   questions,
+  favoriteIds = [],
+  onToggleFavorite,
 }: {
   responses: SurveyResponse[];
   questions: SurveyQuestion[];
+  favoriteIds?: string[];
+  onToggleFavorite?: (id: string) => void;
 }) {
   const [filter, setFilter] = useState<SegmentFilter>({});
   const options = useMemo(() => segmentOptions(responses), [responses]);
@@ -207,23 +217,43 @@ export function ResponsesAnalysis({
       {/* Tarjeta por pregunta */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {questions.map((q) => {
-          const agg = aggregateQuestion(q, deduped);
-          const completion = total > 0 ? Math.round((agg.n / total) * 100) : 0;
+          // Base = a quién le enseñó la app la pregunta (rutas con showIf).
+          const eligible = eligibleResponses(q, questions, deduped);
+          const agg = aggregateQuestion(q, eligible);
+          const completion = eligible.length > 0 ? Math.round((agg.n / eligible.length) * 100) : 0;
+          const condition = describeShowIf(q, questions);
           return (
             <Card key={q.id} className="bg-card/50 border-border/50">
               <CardHeader className="pb-2">
+                {q.section && (
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{q.section}</p>
+                )}
                 <div className="flex items-start justify-between gap-2">
                   <CardTitle className="text-sm font-semibold leading-snug">{q.label}</CardTitle>
                   <Badge variant="outline" className="flex-shrink-0 text-[10px]">
-                    {QUESTION_TYPE_META[q.type].label}
+                    {QUESTION_TYPE_META[q.type]?.label ?? q.type}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {agg.n} respuestas · {completion}% de completado
+                  <span className="font-mono">{agg.n}</span> respuestas
+                  {q.showIf ? (
+                    <> de <span className="font-mono">{eligible.length}</span> que la vieron</>
+                  ) : null}{' '}
+                  · {completion}% de completado
                 </p>
+                {condition && (
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <GitBranch className="h-3 w-3" /> {condition}
+                  </p>
+                )}
               </CardHeader>
               <CardContent>
-                <QuestionChart question={q} agg={agg} />
+                <QuestionChart
+                  question={q}
+                  agg={agg}
+                  favoriteIds={favoriteIds}
+                  onToggleFavorite={onToggleFavorite}
+                />
               </CardContent>
             </Card>
           );
@@ -293,7 +323,17 @@ function MetricCard({
   );
 }
 
-function QuestionChart({ question, agg }: { question: SurveyQuestion; agg: QuestionAgg }) {
+function QuestionChart({
+  question,
+  agg,
+  favoriteIds,
+  onToggleFavorite,
+}: {
+  question: SurveyQuestion;
+  agg: QuestionAgg;
+  favoriteIds: string[];
+  onToggleFavorite?: (id: string) => void;
+}) {
   if (agg.n === 0) {
     return <p className="py-6 text-center text-sm text-muted-foreground/60">Sin respuestas a esta pregunta.</p>;
   }
@@ -369,36 +409,72 @@ function QuestionChart({ question, agg }: { question: SurveyQuestion; agg: Quest
             {agg.total} selecciones (cada persona puede elegir varias)
           </p>
         )}
-        <ResponsiveContainer width="100%" height={Math.max(120, data.length * 38)}>
-          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 40, left: 4, bottom: 4 }}>
-            <XAxis type="number" hide />
-            <YAxis
-              type="category"
-              dataKey="name"
-              width={110}
-              tick={{ fontSize: 11, fill: 'hsl(210 20% 80%)' }}
-            />
-            <Tooltip
-              contentStyle={{ background: 'hsl(220 13% 10%)', border: '1px solid hsl(220 13% 18%)', borderRadius: 8, fontSize: 12 }}
-              cursor={{ fill: 'hsl(220 13% 18% / 0.4)' }}
-              formatter={(value: number, _name, props) => [`${value} (${props.payload.pct}%)`, 'Respuestas']}
-            />
-            <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-              {data.map((_, i) => (
-                <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        {/* Barras con la etiqueta encima: las opciones largas no caben en un eje. */}
+        <div className="space-y-2">
+          {[...data]
+            .sort((a, b) => b.count - a.count)
+            .map((d, i) => (
+              <div key={d.name}>
+                <div className="mb-0.5 flex items-start justify-between gap-3 text-xs">
+                  <span className="leading-snug">{d.name}</span>
+                  <span className="whitespace-nowrap font-mono">
+                    {d.count} <span className="text-muted-foreground">({d.pct}%)</span>
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full" style={{ width: `${d.pct}%`, backgroundColor: PALETTE[i % PALETTE.length] }} />
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (agg.kind === 'ratings') {
+    return (
+      <div className="space-y-2">
+        {[...agg.items]
+          .sort((a, b) => b.mean - a.mean)
+          .map((it) => (
+            <div key={it.value} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
+              <span className="truncate text-sm" title={it.label}>
+                {it.label}
+              </span>
+              <span className="text-right font-mono text-sm font-semibold text-primary">
+                {it.n ? it.mean.toFixed(1) : '—'}
+                <span className="ml-1 text-[10px] font-normal text-muted-foreground">n={it.n}</span>
+              </span>
+              <div className="col-span-2 flex h-2 overflow-hidden rounded-full bg-muted" title={it.distribution.map((c, i) => `${i + 1}★: ${c}`).join(' · ')}>
+                {it.distribution.map((c, i) => (
+                  <div
+                    key={i}
+                    style={{ width: `${it.n ? (c / it.n) * 100 : 0}%`, backgroundColor: PRIMARY, opacity: 0.25 + i * 0.18 }}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        <p className="text-[10px] text-muted-foreground">Barra: reparto de 1★ (claro) a 5★ (intenso).</p>
       </div>
     );
   }
 
   // text
-  return <TextResponses agg={agg} />;
+  return <TextResponses agg={agg} questionId={question.id} favoriteIds={favoriteIds} onToggleFavorite={onToggleFavorite} />;
 }
 
-function TextResponses({ agg }: { agg: Extract<QuestionAgg, { kind: 'text' }> }) {
+function TextResponses({
+  agg,
+  questionId,
+  favoriteIds,
+  onToggleFavorite,
+}: {
+  agg: Extract<QuestionAgg, { kind: 'text' }>;
+  questionId: string;
+  favoriteIds: string[];
+  onToggleFavorite?: (id: string) => void;
+}) {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 5;
   const pages = Math.ceil(agg.values.length / PAGE_SIZE);
@@ -414,20 +490,36 @@ function TextResponses({ agg }: { agg: Extract<QuestionAgg, { kind: 'text' }> })
         {agg.n} respuestas · longitud media {avgLen} caracteres
       </p>
       <div className="space-y-2">
-        {slice.map((v, i) => (
-          <blockquote
-            key={i}
-            className="rounded-md border-l-2 border-primary/40 bg-muted/20 py-2 pl-3 pr-2 text-sm italic"
-          >
-            "{v.text}"
-            {v.response.userName && (
-              <span className="mt-1 block text-[10px] not-italic text-muted-foreground">
-                — {v.response.userName}
-                {v.response.userDelegation ? ` · ${v.response.userDelegation}` : ''}
-              </span>
-            )}
-          </blockquote>
-        ))}
+        {slice.map((v, i) => {
+          const id = commentId(questionId, v.response);
+          const fav = favoriteIds.includes(id);
+          return (
+            <div key={i} className="flex items-start gap-1">
+              <blockquote className="flex-1 rounded-md border-l-2 border-primary/40 bg-muted/20 py-2 pl-3 pr-2 text-sm italic">
+                "{v.text}"
+                {v.response.userName && (
+                  <span className="mt-1 block text-[10px] not-italic text-muted-foreground">
+                    — {v.response.userName}
+                    {v.response.userDelegation ? ` · ${v.response.userDelegation}` : ''}
+                  </span>
+                )}
+              </blockquote>
+              {onToggleFavorite && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn('h-8 w-8 p-0', fav ? 'text-warning' : 'text-muted-foreground')}
+                  aria-pressed={fav}
+                  aria-label={fav ? 'Quitar de favoritos' : 'Marcar como favorito (sale en el informe)'}
+                  title={fav ? 'Quitar de favoritos' : 'Favorito: sale en «Lo más destacado» del informe'}
+                  onClick={() => onToggleFavorite(id)}
+                >
+                  <Star className="h-4 w-4" fill={fav ? 'currentColor' : 'transparent'} />
+                </Button>
+              )}
+            </div>
+          );
+        })}
       </div>
       {pages > 1 && (
         <div className="flex items-center justify-center gap-2 text-xs">
