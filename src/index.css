@@ -79,6 +79,22 @@
     --sidebar-accent-foreground: 210 20% 88%;
     --sidebar-border: 220 13% 17%;
     --sidebar-ring: 197 89% 61%;
+
+    /*
+     * Superficie de INFORMES (página pública /informe/<slug>, PDF e imágenes
+     * para WhatsApp). No es un tema claro del panel: es lo que verá la gente de
+     * MCM en el móvil, así que va en claro y con la marca de la app
+     * (`report-brand` = brand.primary #253883 de mcm-app/constants/colors.ts;
+     * texto/gris = roles claros de la app, fuente del sistema). Solo se usan
+     * dentro de `.report-surface`. El acento de cada encuesta va inline.
+     */
+    --report-bg: 240 24% 96%;
+    --report-card: 0 0% 100%;
+    --report-sunken: 240 20% 97%;
+    --report-text: 240 6% 11%;
+    --report-muted: 240 3% 42%;
+    --report-border: 240 6% 89%;
+    --report-brand: 228 56% 33%;
   }
 }
 
@@ -140,5 +156,72 @@
     50% {
       opacity: 0.4;
     }
+  }
+}
+
+/* ─── Informes ──────────────────────────────────────────────────────────── */
+.report-surface {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: hsl(var(--report-text));
+  -webkit-font-smoothing: antialiased;
+}
+.report-surface * {
+  border-color: hsl(var(--report-border));
+}
+/* Pie que solo aparece en la imagen exportada de una tarjeta. */
+.report-surface [data-capture-only] {
+  display: none;
+}
+.report-surface [data-capturing] [data-capture-only],
+.report-surface[data-capturing] [data-capture-only] {
+  display: flex;
+}
+.report-surface [data-capturing] [data-export-ignore],
+.report-surface[data-capturing] [data-export-ignore] {
+  display: none !important;
+}
+
+/* El retrato del informe para imprimir vive en un portal fuera de #root. */
+#report-print-portal {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 10mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body.printing-report > *:not(#report-print-portal) {
+    display: none !important;
+  }
+  body.printing-report #report-print-portal {
+    display: block;
+  }
+  .report-surface [data-export-ignore] {
+    display: none !important;
+  }
+  #report-print-portal .report-surface {
+    background: #fff !important;
+  }
+  .report-card {
+    break-inside: avoid;
+    box-shadow: none !important;
+    border: 1px solid hsl(var(--report-border));
+  }
+  /* Las de comentarios pueden ser de varias páginas: que se partan. */
+  .report-card[data-kind='text'] {
+    break-inside: auto;
+  }
+  .report-card[data-kind='text'] li {
+    break-inside: avoid;
+  }
+  .report-section-title {
+    break-after: avoid;
   }
 }

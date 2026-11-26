@@ -1,5 +1,5 @@
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
-import { GripVertical, Trash2, Plus, X, Lock, RefreshCw } from 'lucide-react';
+import { GripVertical, Trash2, Plus, X, Lock, RefreshCw, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -64,6 +64,18 @@ export function QuestionsEditor({ questions, onChange, lockedIds }: QuestionsEdi
     } else {
       patch.options = undefined;
     }
+    if (type === 'ratings') {
+      patch.items =
+        q.items && q.items.length >= 1
+          ? q.items
+          : [
+              { value: 'elemento-1', label: 'Elemento 1' },
+              { value: 'elemento-2', label: 'Elemento 2' },
+            ];
+    } else {
+      patch.items = undefined;
+    }
+    if (type !== 'multi') patch.maxSelect = undefined;
     if (type === 'scale') {
       patch.min = q.min ?? 0;
       patch.max = q.max ?? 10;
@@ -195,6 +207,13 @@ export function QuestionsEditor({ questions, onChange, lockedIds }: QuestionsEdi
                             </div>
 
                             <TypeFields question={q} onChange={(patch) => update(index, patch)} />
+
+                            <RouteFields
+                              question={q}
+                              previous={questions.slice(0, index)}
+                              sections={[...new Set(questions.map((x) => x.section).filter((x): x is string => !!x))]}
+                              onChange={(patch) => update(index, patch)}
+                            />
                           </div>
                         </div>
                       </div>
@@ -277,39 +296,183 @@ function TypeFields({
     );
   }
 
-  if (question.type === 'single' || question.type === 'multi') {
+  if (question.type === 'single') {
     return <OptionsEditor question={question} onChange={onChange} />;
+  }
+
+  if (question.type === 'multi') {
+    return (
+      <div className="space-y-2">
+        <OptionsEditor question={question} onChange={onChange} />
+        <div className="flex items-center gap-2">
+          <Label htmlFor={`max-${question.id}`} className="text-xs text-muted-foreground whitespace-nowrap">
+            Máximo a marcar
+          </Label>
+          <Input
+            id={`max-${question.id}`}
+            type="number"
+            min={1}
+            placeholder="sin tope"
+            value={question.maxSelect ?? ''}
+            onChange={(e) => onChange({ maxSelect: e.target.value ? Math.max(1, Math.floor(Number(e.target.value))) : undefined })}
+            className="h-8 w-28 bg-input border-border/50 font-mono text-xs"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (question.type === 'ratings') {
+    return <OptionsEditor question={question} onChange={onChange} field="items" />;
   }
 
   return null;
 }
 
-function OptionsEditor({
+const NO_PARENT = '__none';
+
+/** Sección (rótulo) y ruta condicional (`showIf`) de una pregunta. */
+function RouteFields({
   question,
+  previous,
+  sections,
   onChange,
 }: {
   question: SurveyQuestion;
+  previous: SurveyQuestion[];
+  sections: string[];
   onChange: (patch: Partial<SurveyQuestion>) => void;
 }) {
-  const options = question.options ?? [];
+  const candidates = previous.filter((p) => p.type === 'single' || p.type === 'multi');
+  const parent = question.showIf ? previous.find((p) => p.id === question.showIf!.questionId) : undefined;
+  const wanted = question.showIf ? (Array.isArray(question.showIf.equals) ? question.showIf.equals : [question.showIf.equals]) : [];
+  const listId = `sections-${question.id}`;
 
-  const updateOption = (i: number, patch: Partial<{ value: string; label: string }>) => {
-    onChange({ options: options.map((o, idx) => (idx === i ? { ...o, ...patch } : o)) });
+  const setWanted = (values: string[]) => {
+    if (!question.showIf) return;
+    onChange({
+      showIf: { questionId: question.showIf.questionId, equals: values.length === 1 ? values[0] : values },
+    });
   };
 
-  const removeOption = (i: number) => onChange({ options: options.filter((_, idx) => idx !== i) });
+  return (
+    <div className="grid gap-3 rounded-md border border-dashed border-border/50 p-3 sm:grid-cols-2">
+      <div className="space-y-1">
+        <Label htmlFor={`sec-${question.id}`} className="text-xs text-muted-foreground">
+          Sección <span className="opacity-60">(rótulo junto al contador)</span>
+        </Label>
+        <Input
+          id={`sec-${question.id}`}
+          list={listId}
+          placeholder="Ej.: Aspectos prácticos"
+          value={question.section ?? ''}
+          onChange={(e) => onChange({ section: e.target.value || undefined })}
+          className="h-8 bg-input border-border/50 text-sm"
+        />
+        <datalist id={listId}>
+          {sections.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      </div>
+      <div className="space-y-1">
+        <Label className="flex items-center gap-1 text-xs text-muted-foreground">
+          <GitBranch className="h-3 w-3" /> Mostrar solo si…
+        </Label>
+        <Select
+          value={question.showIf?.questionId ?? NO_PARENT}
+          onValueChange={(v) => {
+            if (v === NO_PARENT) return onChange({ showIf: undefined });
+            const p = candidates.find((c) => c.id === v);
+            onChange({ showIf: { questionId: v, equals: p?.options?.[0]?.value ?? '' } });
+          }}
+          disabled={candidates.length === 0 && !question.showIf}
+        >
+          <SelectTrigger className="h-8 bg-input border-border/50 text-xs" aria-label="Pregunta de la que depende">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_PARENT}>Siempre (sin condición)</SelectItem>
+            {candidates.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.label || c.id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {candidates.length === 0 && !question.showIf && (
+          <p className="text-[10px] text-muted-foreground/70">Necesita una pregunta de opción ANTES de esta.</p>
+        )}
+      </div>
+      {question.showIf && (
+        <div className="space-y-1 sm:col-span-2">
+          <p className="text-xs text-muted-foreground">
+            …y la respuesta es {parent?.type === 'multi' ? '(incluye alguna de)' : '(cualquiera de)'}:
+          </p>
+          {parent ? (
+            <div className="flex flex-wrap gap-1.5">
+              {(parent.options ?? []).map((o) => {
+                const on = wanted.includes(o.value);
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setWanted(on ? wanted.filter((w) => w !== o.value) : [...wanted, o.value])}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                      on ? 'border-primary bg-primary/15 text-primary' : 'border-border/50 text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {o.label || o.value}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-destructive">
+              Depende de «{question.showIf.questionId}», que no está antes de esta pregunta.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OptionsEditor({
+  question,
+  onChange,
+  field = 'options',
+}: {
+  question: SurveyQuestion;
+  onChange: (patch: Partial<SurveyQuestion>) => void;
+  /** `items` para `ratings` (elementos a valorar). */
+  field?: 'options' | 'items';
+}) {
+  const options = question[field] ?? [];
+  const prefix = field === 'items' ? 'elemento' : 'opcion';
+  const autoRe = field === 'items' ? /^elemento-\d+$/ : /^opcion-\d+$/;
+
+  const updateOption = (i: number, patch: Partial<{ value: string; label: string }>) => {
+    onChange({ [field]: options.map((o, idx) => (idx === i ? { ...o, ...patch } : o)) });
+  };
+
+  const removeOption = (i: number) => onChange({ [field]: options.filter((_, idx) => idx !== i) });
 
   const addOption = () => {
     const existing = options.map((o) => o.value);
-    let value = `opcion-${options.length + 1}`;
+    let value = `${prefix}-${options.length + 1}`;
     let n = options.length + 1;
-    while (existing.includes(value)) value = `opcion-${++n}`;
-    onChange({ options: [...options, { value, label: '' }] });
+    while (existing.includes(value)) value = `${prefix}-${++n}`;
+    onChange({ [field]: [...options, { value, label: '' }] });
   };
 
   return (
     <div className="space-y-2 rounded-md border border-border/40 bg-background/40 p-3">
-      <Label className="text-xs font-medium text-muted-foreground">Opciones</Label>
+      <Label className="text-xs font-medium text-muted-foreground">
+        {field === 'items' ? 'Elementos a valorar (1–5 estrellas cada uno)' : 'Opciones'}
+      </Label>
       {options.map((o, i) => (
         <div key={i} className="flex items-center gap-2">
           <Input
@@ -318,7 +481,7 @@ function OptionsEditor({
             onChange={(e) => {
               const label = e.target.value;
               // Si el value sigue siendo el autogenerado, sincronízalo con el label.
-              const auto = !o.value || /^opcion-\d+$/.test(o.value);
+              const auto = !o.value || autoRe.test(o.value);
               updateOption(i, auto ? { label, value: slugify(label) || o.value } : { label });
             }}
             className="h-8 bg-input border-border/50 text-sm"
@@ -342,7 +505,7 @@ function OptionsEditor({
       ))}
       <Button type="button" variant="outline" size="sm" className="w-full" onClick={addOption}>
         <Plus className="mr-2 h-3.5 w-3.5" />
-        Añadir opción
+        {field === 'items' ? 'Añadir elemento' : 'Añadir opción'}
       </Button>
     </div>
   );

@@ -2,6 +2,7 @@ import { ref, set, update } from 'firebase/database';
 import { guardWrite } from '@/lib/firebaseRules';
 import { getDB } from '@/lib/firebase';
 import { slugify, TAB_LABELS, HOME_BUTTON_LABELS } from '@/lib/profileCatalog';
+import { getEventEvaluationDefault } from '@/lib/eventEvaluationDefaults';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Encuestas y Evaluaciones — contrato de datos (ver docs / ENCUESTAS_CONTRATO.md)
@@ -16,7 +17,7 @@ import { slugify, TAB_LABELS, HOME_BUTTON_LABELS } from '@/lib/profileCatalog';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type SurveyStatus = 'draft' | 'scheduled' | 'open' | 'closed';
-export type QuestionType = 'stars' | 'scale' | 'text' | 'yesno' | 'single' | 'multi';
+export type QuestionType = 'stars' | 'scale' | 'text' | 'yesno' | 'single' | 'multi' | 'ratings';
 export type Platform = 'ios' | 'android' | 'web';
 export type ProfileType = 'familia' | 'monitor' | 'miembro';
 export type SurveyClass = 'event' | 'app' | 'generic';
@@ -40,6 +41,19 @@ export interface SurveyQuestion {
   minLabel?: string; // scale
   maxLabel?: string; // scale
   options?: QuestionOption[]; // single / multi (obligatorio)
+  maxSelect?: number; // multi: tope de opciones marcables (sin tope si falta)
+  items?: QuestionOption[]; // ratings (obligatorio): cada item se valora 1..5
+  /** Rótulo de bloque («Aspectos prácticos»). Solo presentación. */
+  section?: string;
+  /** Ruta condicional: solo se enseña (y se guarda) si se cumple. */
+  showIf?: ShowIf;
+}
+
+export interface ShowIf {
+  /** id de una pregunta ANTERIOR. */
+  questionId: string;
+  /** Valor o valores que la activan (con `multi`, basta con que incluya alguno). */
+  equals: string | string[];
 }
 
 export interface SurveyPlacement {
@@ -75,7 +89,7 @@ export interface SurveyConfig {
   id?: string;
 }
 
-export type AnswerValue = number | string | boolean | string[];
+export type AnswerValue = number | string | boolean | string[] | Record<string, number>;
 
 export interface SurveyResponse {
   answers?: Record<string, AnswerValue>;
@@ -188,7 +202,56 @@ export const QUESTION_TYPE_META: Record<QuestionType, { label: string; hint: str
   yesno: { label: 'Sí / No', hint: 'Pregunta binaria' },
   single: { label: 'Opción única', hint: 'Elegir una opción de una lista' },
   multi: { label: 'Opción múltiple', hint: 'Elegir varias opciones de una lista' },
+  ratings: { label: 'Valoraciones', hint: 'Varios elementos, cada uno de 1 a 5 estrellas, en una pantalla' },
 };
+
+// ─── Rutas condicionales (espejo de visibleQuestions en la app) ────────────────
+
+function answerMatches(answer: unknown, equals: string | string[]): boolean {
+  const wanted = Array.isArray(equals) ? equals : [equals];
+  if (Array.isArray(answer)) return answer.some((a) => wanted.includes(a));
+  return typeof answer === 'string' && wanted.includes(answer);
+}
+
+/**
+ * Ids de las preguntas que la app le enseñó a una respuesta concreta, mismo
+ * algoritmo que `visibleQuestions` (mcm-app/constants/evaluation.ts): una
+ * pregunta con `showIf` solo cuenta si la de arranque estaba visible y
+ * contestada con el valor pedido.
+ */
+export function visibleQuestionIds(
+  questions: SurveyQuestion[],
+  answers: Record<string, AnswerValue> | undefined,
+): Set<string> {
+  const shown = new Set<string>();
+  for (const q of questions) {
+    if (q.showIf) {
+      if (!shown.has(q.showIf.questionId)) continue;
+      if (!answerMatches(answers?.[q.showIf.questionId], q.showIf.equals)) continue;
+    }
+    shown.add(q.id);
+  }
+  return shown;
+}
+
+/** Respuestas a las que la app sí les enseñó la pregunta (base de los porcentajes). */
+export function eligibleResponses(
+  q: SurveyQuestion,
+  questions: SurveyQuestion[],
+  responses: SurveyResponse[],
+): SurveyResponse[] {
+  if (!q.showIf) return responses;
+  return responses.filter((r) => visibleQuestionIds(questions, r.answers).has(q.id));
+}
+
+/** Texto legible de la condición: «Solo si “¿En qué parte…?” = Curso Despierta». */
+export function describeShowIf(q: SurveyQuestion, questions: SurveyQuestion[]): string | null {
+  if (!q.showIf) return null;
+  const parent = questions.find((x) => x.id === q.showIf!.questionId);
+  const wanted = Array.isArray(q.showIf.equals) ? q.showIf.equals : [q.showIf.equals];
+  const labels = wanted.map((v) => parent?.options?.find((o) => o.value === v)?.label ?? v);
+  return `Solo si respondió «${labels.join(' o ')}»`;
+}
 
 // ─── Estado abierto/cerrado (espejo de isEvaluationOpen en la app) ─────────────
 
@@ -477,7 +540,12 @@ export function parseEventEvaluations(activitiesNode: unknown): SurveyEntry[] {
       hidden?: boolean;
       respuestas?: unknown;
     };
-    const config = (wrapper.data && typeof wrapper.data === 'object' ? wrapper.data : {}) as SurveyConfig;
+    // Como la app: las preguntas que falten en Firebase salen del código
+    // (getEventEvaluationDefault). El Congreso M+C solo tiene la programación.
+    const config = mergeWithDefaultConfig(
+      getEventEvaluationDefault(eventId),
+      wrapper.data && typeof wrapper.data === 'object' ? wrapper.data : null,
+    );
     out.push({
       key: `event:${eventId}`,
       surveyClass: 'event',
@@ -664,6 +732,15 @@ export function isAnswered(q: SurveyQuestion, value: AnswerValue | undefined): b
       return typeof value === 'string' && value.length > 0;
     case 'multi':
       return Array.isArray(value) && value.length > 0;
+    case 'ratings':
+      // Para analizar basta con que haya valorado algún item (la app exige todos
+      // si es obligatoria, pero una opcional puede llegar a medias).
+      return (
+        !!value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        Object.values(value).some((n) => typeof n === 'number' && n > 0)
+      );
     default:
       return false;
   }
@@ -696,7 +773,12 @@ export interface TextAgg {
   n: number;
   values: { text: string; response: SurveyResponse }[];
 }
-export type QuestionAgg = NumericAgg | BooleanAgg | OptionAgg | TextAgg;
+export interface RatingsAgg {
+  kind: 'ratings';
+  n: number;
+  items: { value: string; label: string; n: number; mean: number; distribution: number[] }[];
+}
+export type QuestionAgg = NumericAgg | BooleanAgg | OptionAgg | TextAgg | RatingsAgg;
 
 export function aggregateQuestion(q: SurveyQuestion, responses: SurveyResponse[]): QuestionAgg {
   const answered = responses
@@ -704,6 +786,16 @@ export function aggregateQuestion(q: SurveyQuestion, responses: SurveyResponse[]
     .filter((v) => isAnswered(q, v));
 
   switch (q.type) {
+    case 'ratings': {
+      const maps = answered as Record<string, number>[];
+      const items = (q.items ?? []).map((it) => {
+        const nums = maps.map((m) => m[it.value]).filter((v): v is number => typeof v === 'number' && v > 0);
+        const distribution = [1, 2, 3, 4, 5].map((s) => nums.filter((v) => Math.round(v) === s).length);
+        const mean = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+        return { value: it.value, label: it.label, n: nums.length, mean, distribution };
+      });
+      return { kind: 'ratings', n: maps.length, items };
+    }
     case 'stars': {
       const nums = answered as number[];
       const distribution = [1, 2, 3, 4, 5].map((star) => ({
@@ -795,6 +887,11 @@ export function inferQuestionsFromResponses(responses: SurveyResponse[]): Survey
       if (seen.has(id)) {
         // Acumula opciones observadas para multi/single.
         const q = seen.get(id)!;
+        if (q.type === 'ratings' && q.items && value && typeof value === 'object' && !Array.isArray(value)) {
+          for (const k of Object.keys(value)) {
+            if (!q.items.some((it) => it.value === k)) q.items.push({ value: k, label: k });
+          }
+        }
         if ((q.type === 'multi' || q.type === 'single') && q.options) {
           const vals = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
           for (const v of vals) {
@@ -810,6 +907,8 @@ export function inferQuestionsFromResponses(responses: SurveyResponse[]): Survey
         q = { id, type: value >= 1 && value <= 5 && Number.isInteger(value) ? 'stars' : 'scale', label: id };
       } else if (Array.isArray(value)) {
         q = { id, type: 'multi', label: id, options: value.map((v) => ({ value: String(v), label: String(v) })) };
+      } else if (value && typeof value === 'object') {
+        q = { id, type: 'ratings', label: id, items: Object.keys(value).map((k) => ({ value: k, label: k })) };
       } else {
         q = { id, type: 'text', label: id };
       }
@@ -841,6 +940,33 @@ export function validateQuestions(questions: SurveyQuestion[]): string[] {
       const min = q.min ?? 0;
       const max = q.max ?? 10;
       if (min >= max) errors.push(`${n}: el mínimo debe ser menor que el máximo.`);
+    }
+    if (q.type === 'multi' && q.maxSelect != null) {
+      if (!Number.isInteger(q.maxSelect) || q.maxSelect < 1) errors.push(`${n}: el tope de opciones debe ser 1 o más.`);
+      else if (q.maxSelect >= (q.options ?? []).length)
+        errors.push(`${n}: el tope (${q.maxSelect}) no limita nada con ${(q.options ?? []).length} opciones; quítalo.`);
+    }
+    if (q.type === 'ratings') {
+      const items = q.items ?? [];
+      if (items.length < 1) errors.push(`${n}: necesita al menos 1 elemento a valorar.`);
+      const vals = new Set<string>();
+      items.forEach((it) => {
+        if (!it.value.trim()) errors.push(`${n}: hay un elemento sin valor.`);
+        if (vals.has(it.value)) errors.push(`${n}: el valor "${it.value}" está repetido.`);
+        vals.add(it.value);
+      });
+    }
+    if (q.showIf) {
+      const parentIndex = questions.findIndex((x) => x.id === q.showIf!.questionId);
+      if (parentIndex < 0) errors.push(`${n}: depende de "${q.showIf.questionId}", que no existe.`);
+      else if (parentIndex >= i) errors.push(`${n}: depende de una pregunta que va después; la app nunca la enseñaría.`);
+      else {
+        const parent = questions[parentIndex];
+        if (parent.type !== 'single' && parent.type !== 'multi')
+          errors.push(`${n}: solo puede depender de una pregunta de opción única o múltiple.`);
+        const wanted = Array.isArray(q.showIf.equals) ? q.showIf.equals : [q.showIf.equals];
+        if (wanted.length === 0 || wanted.every((w) => !w)) errors.push(`${n}: elige qué respuesta la activa.`);
+      }
     }
     if (q.type === 'single' || q.type === 'multi') {
       const opts = q.options ?? [];
@@ -883,23 +1009,40 @@ function formatAnswerForExport(q: SurveyQuestion, value: AnswerValue | undefined
   if (value === undefined || value === null) return '';
   if (q.type === 'multi' && Array.isArray(value)) return value.join('; ');
   if (q.type === 'yesno' && typeof value === 'boolean') return value ? 'Sí' : 'No';
+  if (q.type === 'single' && typeof value === 'string') return q.options?.find((o) => o.value === value)?.label ?? value;
   return String(value);
 }
 
+/** Columnas por pregunta: `ratings` se abre en una columna por elemento. */
+function exportColumns(questions: SurveyQuestion[]) {
+  return questions.flatMap((q) =>
+    q.type === 'ratings'
+      ? (q.items ?? []).map((it) => ({
+          header: `${q.id}.${it.value}`,
+          get: (r: SurveyResponse) => {
+            const v = getAnswer(r, q.id);
+            const n = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, number>)[it.value] : undefined;
+            return typeof n === 'number' ? String(n) : '';
+          },
+        }))
+      : [{ header: q.id, get: (r: SurveyResponse) => formatAnswerForExport(q, getAnswer(r, q.id)) }],
+  );
+}
+
 function buildMatrix(entry: SurveyEntry, questions: SurveyQuestion[]): { headers: string[]; rows: string[][] } {
-  const headers = [...META_COLUMNS.map((c) => c.label), ...questions.map((q) => q.id)];
+  const cols = exportColumns(questions);
+  const headers = [...META_COLUMNS.map((c) => c.label), ...cols.map((c) => c.header)];
   const rows = entry.responses.map((r) => {
     const meta = META_COLUMNS.map((c) => {
       const v = r[c.key];
       return v == null ? '' : String(v);
     });
-    const answers = questions.map((q) => formatAnswerForExport(q, getAnswer(r, q.id)));
-    return [...meta, ...answers];
+    return [...meta, ...cols.map((c) => c.get(r))];
   });
   return { headers, rows };
 }
 
-function triggerDownload(blob: Blob, filename: string): void {
+export function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

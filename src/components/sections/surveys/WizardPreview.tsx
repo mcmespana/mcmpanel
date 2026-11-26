@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Star, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { SurveyConfig, SurveyQuestion } from '@/lib/surveys';
+import { visibleQuestionIds, type AnswerValue, type SurveyConfig, type SurveyQuestion } from '@/lib/surveys';
 import { DEFAULT_SURVEY_ACCENT } from '@/lib/brandTokens';
 
 /**
@@ -10,11 +10,16 @@ import { DEFAULT_SURVEY_ACCENT } from '@/lib/brandTokens';
  * presentación — los valores introducidos no se guardan en ningún sitio.
  */
 export function WizardPreview({ config }: { config: SurveyConfig }) {
-  const questions = useMemo(() => config.questions ?? [], [config.questions]);
+  const allQuestions = useMemo(() => config.questions ?? [], [config.questions]);
   const accent = config.accentColor || DEFAULT_SURVEY_ACCENT;
   // -1 = pantalla de bienvenida, questions.length = agradecimiento.
   const [step, setStep] = useState(-1);
   const [values, setValues] = useState<Record<string, unknown>>({});
+  // Como en la app: solo las preguntas de la ruta elegida (showIf).
+  const questions = useMemo(() => {
+    const shown = visibleQuestionIds(allQuestions, values as Record<string, AnswerValue>);
+    return allQuestions.filter((q) => shown.has(q.id));
+  }, [allQuestions, values]);
 
   // Si cambian las preguntas (se añaden/quitan), no salirse de rango.
   useEffect(() => {
@@ -54,7 +59,8 @@ export function WizardPreview({ config }: { config: SurveyConfig }) {
             {current && (
               <div className="flex flex-1 flex-col">
                 <div className="text-xs font-medium text-muted-foreground">
-                  Pregunta {step + 1} de {total}
+                  {step + 1} / {total}
+                  {current.section ? ` · ${current.section}` : ''}
                   {current.optional ? ' · opcional' : ''}
                 </div>
                 <h3 className="mt-2 text-base font-semibold leading-snug">
@@ -249,12 +255,40 @@ function QuestionInput({
           ))}
         </div>
       );
+    case 'ratings': {
+      const map = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, number>) : {};
+      return (
+        <div className="space-y-3">
+          {(question.items ?? []).map((it) => (
+            <div key={it.value} className="space-y-1">
+              <p className="text-sm">{it.label || 'Elemento'}</p>
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button key={star} type="button" onClick={() => onChange({ ...map, [it.value]: star })} aria-label={`${star} estrellas`}>
+                    <Star className="h-6 w-6" style={{ color: accent }} fill={star <= (map[it.value] ?? 0) ? accent : 'transparent'} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
     case 'multi': {
       const arr = Array.isArray(value) ? (value as string[]) : [];
-      const toggle = (val: string) =>
-        onChange(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
+      const max = question.maxSelect;
+      const toggle = (val: string) => {
+        if (arr.includes(val)) return onChange(arr.filter((x) => x !== val));
+        if (max && arr.length >= max) return; // la app no deja pasar del tope
+        onChange([...arr, val]);
+      };
       return (
         <div className="space-y-2">
+          {max ? (
+            <p className="text-xs text-muted-foreground">
+              Elige hasta {max} · {arr.length}/{max}
+            </p>
+          ) : null}
           {(question.options ?? []).map((o) => {
             const checked = arr.includes(o.value);
             return (
