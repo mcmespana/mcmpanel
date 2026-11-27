@@ -4,7 +4,7 @@ import {
   CheckCircle, Trash2, BarChart3, AlertTriangle,
   Monitor, Apple, Loader2, RefreshCw, Megaphone,
   CalendarClock, XCircle, Ban, Plus, X, MousePointerClick,
-  ChevronDown, Settings2, BellOff,
+  ChevronDown, Settings2, BellOff, Pencil,
 } from 'lucide-react';
 import { ImageUploadCropper } from '@/components/ui/ImageUploadCropper';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ import { onRulesError } from '@/lib/firebaseRules';
 import {
   sendNotification,
   scheduleNotification,
+  updateScheduledNotification,
   cancelScheduledNotification,
   getStats,
   type SendNotificationRequest,
@@ -44,6 +45,7 @@ import {
   type AudienceMatch,
   type SegmentTokenRecord,
   audienceHasAxis,
+  normalizeAudience,
   tokenMatchesAudience,
   summarizeAudience,
 } from '@/lib/audience';
@@ -275,6 +277,58 @@ function minScheduleValue(): string {
   return toLocalInputValue(new Date());
 }
 
+// Loads a scheduled record back into the composer form so it can be edited.
+// Firebase drops empty arrays, so every list is read defensively. A record with
+// no audience means "no filter" (all devices): keep every axis off instead of
+// falling back to the composer default (axis "todos"), which would change who
+// receives it.
+function scheduledToForm(item: ScheduledNotification): FormState {
+  const aud = normalizeAudience(item.audience);
+  const buttons = Array.isArray(item.actionButtons)
+    ? item.actionButtons
+    : item.actionButton
+      ? [item.actionButton]
+      : [];
+
+  let routeChoice = DETAIL;
+  let customRoute = '';
+  let routeEventId = '';
+  if (item.eventId) {
+    routeChoice = EVENT_ROUTE;
+    routeEventId = item.eventId;
+  } else if (item.internalRoute) {
+    if (INTERNAL_ROUTE_IDS.has(item.internalRoute)) {
+      routeChoice = item.internalRoute;
+    } else {
+      routeChoice = CUSTOM_ROUTE;
+      customRoute = item.internalRoute;
+    }
+  }
+
+  const bodyLong = item.bodyLong ?? '';
+  return {
+    title: item.title ?? '',
+    body: item.body ?? '',
+    bodyLong,
+    bodyLongEnabled: !!bodyLong,
+    category: item.category || 'general',
+    priority: item.priority || 'default',
+    icon: item.icon ?? '',
+    imageUrl: item.imageUrl ?? '',
+    routeChoice,
+    customRoute,
+    routeEventId,
+    actionButtons: buttons
+      .slice(0, MAX_ACTION_BUTTONS)
+      .map((b) => ({ text: b.text ?? '', url: b.url ?? '', isInternal: !!b.isInternal })),
+    audienceMatch: aud?.match ?? 'all',
+    audTodos: aud?.todos ?? false,
+    audPerfiles: aud?.perfiles ?? [],
+    audDelegaciones: aud?.delegaciones ?? [],
+    audEventId: aud?.eventId ?? '',
+  };
+}
+
 const SCHEDULE_STATUS: Record<ScheduledNotification['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   scheduled: { label: 'Programada', variant: 'secondary' },
   processing: { label: 'Enviando', variant: 'default' },
@@ -295,6 +349,11 @@ export function NotificationsSection() {
   const [scheduleMode, setScheduleMode] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
   const [scheduled, setScheduled] = useState<ScheduledNotification[]>([]);
+  // Id of the scheduled notification being edited in the composer (null = new).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // Legacy records filter by flat `topics` (no `audience`); the form can't show
+  // them, so they are carried over untouched while editing.
+  const [editingTopics, setEditingTopics] = useState<string[]>([]);
   // Segmentation: live snapshot of /pushTokens (for the recipient preview count)
   // and the delegation list (from /profileConfig) that populates the multiselect.
   const [tokens, setTokens] = useState<SegmentTokenRecord[]>([]);
@@ -591,6 +650,7 @@ export function NotificationsSection() {
       eventId: resolveEventId(form),
       actionButtons: actionButtons.length ? actionButtons : undefined,
       audience: segmented ? audience : undefined,
+      topics: editingId && !segmented && editingTopics.length ? editingTopics : undefined,
     };
 
     // ─── Scheduled send ───────────────────────────────────────────────
@@ -607,17 +667,22 @@ export function NotificationsSection() {
 
       setSending(true);
       try {
-        const result = await scheduleNotification({ ...payload, scheduledFor: iso });
+        const result = editingId
+          ? await updateScheduledNotification(editingId, { ...payload, scheduledFor: iso })
+          : await scheduleNotification({ ...payload, scheduledFor: iso });
         const when = new Date(result.scheduledFor).toLocaleString('es-ES', {
           day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
         });
-        toast({ title: 'Notificación programada', description: `Se enviará el ${when}.` });
-        setForm({ ...emptyForm });
-        setScheduleMode(false);
-        setScheduledFor('');
+        toast({
+          title: editingId ? 'Programación actualizada' : 'Notificación programada',
+          description: `Se enviará el ${when}.`,
+        });
+        const wasEditing = !!editingId;
+        resetComposer();
+        if (wasEditing) handleTabChange('scheduled');
       } catch (error) {
         toast({
-          title: 'Error al programar',
+          title: editingId ? 'Error al guardar los cambios' : 'Error al programar',
           description: error instanceof Error ? error.message : 'Error desconocido',
           variant: 'destructive',
         });
@@ -650,6 +715,25 @@ export function NotificationsSection() {
     } finally {
       setSending(false);
     }
+  };
+
+  // Back to a blank composer (also leaves edit mode).
+  const resetComposer = () => {
+    setForm({ ...emptyForm });
+    setScheduleMode(false);
+    setScheduledFor('');
+    setEditingId(null);
+    setEditingTopics([]);
+  };
+
+  const handleEditScheduled = (item: ScheduledNotification) => {
+    setForm(scheduledToForm(item));
+    setEditingTopics(Array.isArray(item.topics) ? item.topics : []);
+    setEditingId(item.id);
+    setScheduleMode(true);
+    setScheduledFor(toLocalInputValue(new Date(item.scheduledFor)));
+    setEventCustomMode(false);
+    handleTabChange('compose');
   };
 
   const handleCancelScheduled = async (id: string) => {
@@ -839,11 +923,17 @@ export function NotificationsSection() {
               <Card className="bg-card/50 backdrop-blur-sm border-border/50">
                 <CardHeader>
                   <CardTitle className="flex items-center">
-                    <Send className="w-5 h-5 mr-2 text-primary" />
-                    Componer Notificación
+                    {editingId ? (
+                      <Pencil className="w-5 h-5 mr-2 text-primary" />
+                    ) : (
+                      <Send className="w-5 h-5 mr-2 text-primary" />
+                    )}
+                    {editingId ? 'Editar notificación programada' : 'Componer Notificación'}
                   </CardTitle>
                   <CardDescription>
-                    Configura el contenido y opciones de tu notificación push
+                    {editingId
+                      ? 'Estás editando una programada pendiente. Guarda los cambios o descártalos para volver a crear una nueva.'
+                      : 'Configura el contenido y opciones de tu notificación push'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -1373,6 +1463,7 @@ export function NotificationsSection() {
                       <Switch
                         id="schedule-mode"
                         checked={scheduleMode}
+                        disabled={!!editingId}
                         onCheckedChange={(v) => {
                           setScheduleMode(v);
                           if (v && !scheduledFor) setScheduledFor(defaultScheduleValue());
@@ -1412,7 +1503,12 @@ export function NotificationsSection() {
                     {sending ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        {scheduleMode ? 'Programando...' : 'Enviando...'}
+                        {editingId ? 'Guardando...' : scheduleMode ? 'Programando...' : 'Enviando...'}
+                      </>
+                    ) : editingId ? (
+                      <>
+                        <CalendarClock className="w-4 h-4 mr-2" />
+                        {segmented ? `Guardar cambios · ≈ ${recipients.count}` : 'Guardar cambios'}
                       </>
                     ) : scheduleMode ? (
                       <>
@@ -1426,6 +1522,11 @@ export function NotificationsSection() {
                       </>
                     )}
                   </Button>
+                  {editingId && (
+                    <Button variant="ghost" className="w-full" disabled={sending} onClick={resetComposer}>
+                      Descartar cambios
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -1659,15 +1760,26 @@ export function NotificationsSection() {
                             {meta.label}
                           </Badge>
                           {item.status === 'scheduled' && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-destructive hover:text-destructive"
-                              onClick={() => handleCancelScheduled(item.id)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5 mr-1" />
-                              Cancelar
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7"
+                                onClick={() => handleEditScheduled(item)}
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-1" />
+                                Editar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-destructive hover:text-destructive"
+                                onClick={() => handleCancelScheduled(item.id)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                                Cancelar
+                              </Button>
+                            </div>
                           )}
                         </div>
                       </div>
