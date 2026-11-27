@@ -151,6 +151,26 @@ export async function scheduleNotification(
   return res.json();
 }
 
+// Edits a pending (status === 'scheduled') notification. Replaces every
+// editable field; the server rejects it (409) once it is being sent.
+export async function updateScheduledNotification(
+  id: string,
+  data: ScheduleNotificationRequest,
+): Promise<{ id: string; status: string; scheduledFor: string }> {
+  const res = await fetch(`${API_BASE}/schedule?id=${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error((err as { error: string }).error || `Server error: ${res.status}`);
+  }
+
+  return res.json();
+}
+
 // Cancels a pending (status === 'scheduled') notification.
 export async function cancelScheduledNotification(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/schedule?id=${encodeURIComponent(id)}`, {
